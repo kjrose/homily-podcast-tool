@@ -93,16 +93,22 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds.
 ## 🛠️ Project Structure
 ````
 homily-podcast-tool/
-├── __init__.py
-├── audio_utils.py
-├── config_loader.py
-├── database.py
-├── email_utils.py
-├── gpt_utils.py
-├── helpers.py
-├── s3_utils.py
-├── wordpress_utils.py
-└── main.py  # Entry point
+├── requirements.txt
+├── config.json.sample
+├── README.md
+├── LICENSE
+├── main.py
+├── homily_monitor/
+    ├── __init__.py
+    ├── audio_utils.py
+    ├── config_loader.py
+    ├── database.py
+    ├── email_utils.py
+    ├── gpt_utils.py
+    ├── helpers.py
+    ├── s3_utils.py
+    ├── wordpress_utils.py
+    └── main.py  # Entry point
 ````
 
 ## 🤝 Contributing
