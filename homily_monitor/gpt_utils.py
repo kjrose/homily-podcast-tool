@@ -46,7 +46,9 @@ Respond using this JSON format:
 
         # Fallback for last_mod if not provided
         if last_mod is None:
-            last_mod = datetime.fromtimestamp(os.path.getmtime(mp3_path), tz=timezone.utc)
+            last_mod = datetime.fromtimestamp(
+                os.path.getmtime(mp3_path), tz=timezone.utc
+            )
 
         date = last_mod.date()
         hour = last_mod.hour
@@ -65,18 +67,32 @@ Respond using this JSON format:
         # Insert into DB
         cursor = CONN.cursor()
         date_str = date.strftime("%Y-%m-%d")
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO homilies (group_key, filename, date, title, description, special)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (group_key, os.path.basename(mp3_path), date_str, result["title"], result["description"], result["special"]))
+        """,
+            (
+                group_key,
+                os.path.basename(mp3_path),
+                date_str,
+                result["title"],
+                result["description"],
+                result["special"],
+            ),
+        )
         CONN.commit()
 
-    except openai.OpenAIError as e:  # Specific to OpenAI issues (import openai if needed)
+    except (
+        openai.OpenAIError
+    ) as e:  # Specific to OpenAI issues (import openai if needed)
         print(f"❌ OpenAI API error: {e}")
         send_email_alert(mp3_path, f"GPT analysis failed (API error):\n\n{e}")
     except json.JSONDecodeError as e:
         print(f"❌ Invalid JSON from GPT response: {e}")
-        send_email_alert(mp3_path, f"GPT response not valid JSON:\n\n{content}\nError: {e}")
+        send_email_alert(
+            mp3_path, f"GPT response not valid JSON:\n\n{content}\nError: {e}"
+        )
     except Exception as e:
         print(f"❌ Unexpected error in GPT analysis: {e}")
         send_email_alert(mp3_path, f"GPT analysis failed:\n\n{e}")

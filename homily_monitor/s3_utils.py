@@ -20,7 +20,7 @@ s3_client = boto3.client(
     endpoint_url=S3_ENDPOINT,
     aws_access_key_id=ACCESS_KEY,
     aws_secret_access_key=SECRET_KEY,
-    config=Config(s3={"addressing_style": "path"})
+    config=Config(s3={"addressing_style": "path"}),
 )
 
 
@@ -29,25 +29,29 @@ def list_s3_files():
     continuation_token = None
     while True:
         try:
-            kwargs = {'Bucket': S3_BUCKET, 'Prefix': S3_FOLDER}
+            kwargs = {"Bucket": S3_BUCKET, "Prefix": S3_FOLDER}
             if continuation_token:
-                kwargs['ContinuationToken'] = continuation_token
+                kwargs["ContinuationToken"] = continuation_token
             response = s3_client.list_objects_v2(**kwargs)
-            if 'Contents' in response:
-                for obj in response['Contents']:
-                    key = obj['Key']
+            if "Contents" in response:
+                for obj in response["Contents"]:
+                    key = obj["Key"]
                     if key.startswith("Mass-") and key.endswith(".mp3"):
                         files.append({"Key": key, "LastModified": obj["LastModified"]})
-            if not response.get('IsTruncated', False):
+            if not response.get("IsTruncated", False):
                 break
-            continuation_token = response.get('NextContinuationToken')
+            continuation_token = response.get("NextContinuationToken")
         except ClientError as e:
             print(f"❌ S3 client error listing files: {e.response['Error']['Message']}")
-            send_email_alert("S3 Listing Failure", f"S3 client error listing bucket {S3_BUCKET}: {e}")
+            send_email_alert(
+                "S3 Listing Failure", f"S3 client error listing bucket {S3_BUCKET}: {e}"
+            )
             return []
         except Exception as e:
             print(f"❌ Error listing S3 files: {e}")
-            send_email_alert("S3 Listing Failure", f"Error listing files in bucket {S3_BUCKET}: {e}")
+            send_email_alert(
+                "S3 Listing Failure", f"Error listing files in bucket {S3_BUCKET}: {e}"
+            )
             return []  # Or raise if you want to stop main loop
     return files
 

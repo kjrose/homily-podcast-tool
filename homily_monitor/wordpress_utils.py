@@ -18,7 +18,10 @@ def upload_to_wordpress(homily_path, original_mp3_path):
     conn = get_conn()  # Add this
     cursor = conn.cursor()  # Update to conn.cursor()
     filename = os.path.basename(original_mp3_path)
-    cursor.execute("SELECT title, description, special FROM homilies WHERE filename = ?", (filename,))
+    cursor.execute(
+        "SELECT title, description, special FROM homilies WHERE filename = ?",
+        (filename,),
+    )
     row = cursor.fetchone()
     if not row:
         print(f"❌ No analysis found for {filename}")
@@ -33,17 +36,21 @@ def upload_to_wordpress(homily_path, original_mp3_path):
     # Step 1: Upload media
     media_url = f"{WP_URL}/wp-json/wp/v2/media"
     auth = (WP_USER, WP_APP_PASS)
-    headers = {'Content-Disposition': f'attachment; filename="{os.path.basename(homily_path)}"'}
-    with open(homily_path, 'rb') as f:
-        response = requests.post(media_url, auth=auth, headers=headers, files={'file': f})
-    
+    headers = {
+        "Content-Disposition": f'attachment; filename="{os.path.basename(homily_path)}"'
+    }
+    with open(homily_path, "rb") as f:
+        response = requests.post(
+            media_url, auth=auth, headers=headers, files={"file": f}
+        )
+
     if response.status_code != 201:
         print(f"❌ Media upload failed: {response.text}")
         send_email_alert(homily_path, f"Media upload to WP failed: {response.text}")
         return
 
     media_data = response.json()
-    audio_url = media_data['source_url']
+    audio_url = media_data["source_url"]
 
     # Step 2: Create podcast post
     post_url = f"{WP_URL}/wp-json/wp/v2/podcast"
@@ -51,12 +58,10 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         "title": title,
         "content": content,
         "status": "draft",
-        "meta": {
-            "audio_file": audio_url
-        }
+        "meta": {"audio_file": audio_url},
     }
     response = requests.post(post_url, auth=auth, json=post_data)
-    
+
     if response.status_code != 201:
         print(f"❌ Post creation failed: {response.text}")
         send_email_alert(homily_path, f"Podcast post creation failed: {response.text}")

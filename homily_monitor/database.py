@@ -15,7 +15,8 @@ def get_conn():
     if CONN is None:
         CONN = sqlite3.connect(DB_PATH)
         cursor = CONN.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
         CREATE TABLE IF NOT EXISTS homilies (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             group_key TEXT,
@@ -26,13 +27,16 @@ def get_conn():
             special TEXT,
             processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-        """)
-        cursor.execute("""
+        """
+        )
+        cursor.execute(
+            """
         CREATE TABLE IF NOT EXISTS compared_groups (
             group_key TEXT PRIMARY KEY,
             compared_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
-        """)
+        """
+        )
         CONN.commit()
     return CONN
 
@@ -40,8 +44,11 @@ def get_conn():
 def insert_homily(group_key, filename, date, title, description, special):
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute(
+        """
         INSERT INTO homilies (group_key, filename, date, title, description, special)
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (group_key, filename, date, title, description, special))
+    """,
+        (group_key, filename, date, title, description, special),
+    )
     conn.commit()

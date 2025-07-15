@@ -9,10 +9,11 @@ from homily_monitor import (
     database,
     s3_utils,
     audio_utils,
-    helpers
+    helpers,
 )
 
 CFG = cfg_mod.CFG
+
 
 def main():
     print("📡 Starting S3 monitoring...")
@@ -38,12 +39,26 @@ def main():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Mass Downloader and Transcript Checker")
+    parser = argparse.ArgumentParser(
+        description="Mass Downloader and Transcript Checker"
+    )
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--test", action="store_true", help="Test")
-    group.add_argument("--latest", action="store_true", help="Run batch + GPT analysis on latest .mp3 file")
-    group.add_argument("--analyze-latest", action="store_true", help="Analyze the latest transcript file")
-    group.add_argument("--extract-latest-homily", action="store_true", help="Extract homily from latest .mp3 + VTT")
+    group.add_argument(
+        "--latest",
+        action="store_true",
+        help="Run batch + GPT analysis on latest .mp3 file",
+    )
+    group.add_argument(
+        "--analyze-latest",
+        action="store_true",
+        help="Analyze the latest transcript file",
+    )
+    group.add_argument(
+        "--extract-latest-homily",
+        action="store_true",
+        help="Extract homily from latest .mp3 + VTT",
+    )
     args = parser.parse_args()
 
     if args.test:

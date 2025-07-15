@@ -7,8 +7,8 @@ from homily_monitor.config_loader import CFG
 from .email_utils import send_email_alert
 from .gpt_utils import analyze_transcript_with_gpt
 from .audio_utils import extract_homily_from_vtt
-from .gpt_utils import client  
-from .database import get_conn 
+from .gpt_utils import client
+from .database import get_conn
 
 LOCAL_DIR = CFG["paths"]["local_dir"]
 
@@ -53,7 +53,11 @@ def check_transcript(mp3_path, last_mod=None):
 
 
 def analyze_latest_transcript():
-    txt_files = [os.path.join(LOCAL_DIR, f) for f in os.listdir(LOCAL_DIR) if f.lower().endswith(".txt")]
+    txt_files = [
+        os.path.join(LOCAL_DIR, f)
+        for f in os.listdir(LOCAL_DIR)
+        if f.lower().endswith(".txt")
+    ]
     if not txt_files:
         print("❌ No transcript files found.")
         return
@@ -121,12 +125,19 @@ def check_for_completed_weekends():
             sunday_date = datetime.strptime(gk, "%Y-%m-%d").replace(tzinfo=timezone.utc)
             deadline = sunday_date.replace(hour=21, minute=0, second=0, microsecond=0)
             if now > deadline:
-                cursor.execute("SELECT 1 FROM compared_groups WHERE group_key = ?", (gk,))
+                cursor.execute(
+                    "SELECT 1 FROM compared_groups WHERE group_key = ?", (gk,)
+                )
                 if cursor.fetchone() is None:
-                    cursor.execute("SELECT COUNT(*) FROM homilies WHERE group_key = ?", (gk,))
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM homilies WHERE group_key = ?", (gk,)
+                    )
                     count = cursor.fetchone()[0]
                     if count >= 2:
-                        cursor.execute("SELECT filename, title, description, special FROM homilies WHERE group_key = ?", (gk,))
+                        cursor.execute(
+                            "SELECT filename, title, description, special FROM homilies WHERE group_key = ?",
+                            (gk,),
+                        )
                         rows = cursor.fetchall()
                         summaries = [
                             f"Filename: {row[0]}\nTitle: {row[1]}\nDescription: {row[2]}\nSpecial: {row[3]}"
@@ -159,9 +170,13 @@ Respond in JSON.
                         compare_result = json.loads(compare_content)
 
                         if compare_result["status"] == "deviations":
-                            send_deviation_email(gk, compare_result["summary"], summaries_str)
+                            send_deviation_email(
+                                gk, compare_result["summary"], summaries_str
+                            )
                     # Mark as compared
-                    cursor.execute("INSERT INTO compared_groups (group_key) VALUES (?)", (gk,))
+                    cursor.execute(
+                        "INSERT INTO compared_groups (group_key) VALUES (?)", (gk,)
+                    )
                     CONN.commit()
         except ValueError:
             pass  # Invalid group_key format
