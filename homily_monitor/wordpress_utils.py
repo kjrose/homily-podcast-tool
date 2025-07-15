@@ -2,7 +2,7 @@
 
 import os
 import requests
-import json
+from datetime import datetime
 
 from .config_loader import CFG
 from .email_utils import send_email_alert
@@ -18,11 +18,10 @@ LOCAL_DIR = CFG["paths"]["local_dir"]
 
 
 def upload_to_wordpress(homily_path, original_mp3_path):
-    # Get analysis from DB (assuming it's already inserted)
     conn = get_conn()
     cursor = conn.cursor()
     filename = os.path.basename(original_mp3_path)
-    cursor.execute("SELECT title, description, special FROM homilies WHERE filename = ?", (filename,))
+    cursor.execute("SELECT title, description, special, liturgical_day, lit_year, date FROM homilies WHERE filename = ?", (filename,))
     row = cursor.fetchone()
     if not row:
         print(f"⚠️ No analysis found for {filename}; generating automatically...")
@@ -32,14 +31,21 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         if content:
             analyze_transcript_with_gpt(original_mp3_path, content, None)  # None for last_mod to use file mtime
             # Re-query after generation
-            cursor.execute("SELECT title, description, special FROM homilies WHERE filename = ?", (filename,))
+            cursor.execute("SELECT title, description, special, liturgical_day, lit_year, date FROM homilies WHERE filename = ?", (filename,))
             row = cursor.fetchone()
         if not row:
             print(f"❌ Failed to generate analysis for {filename}")
             send_email_alert(homily_path, "Failed to generate analysis for homily upload.")
             return
 
-    title, description, special = row
+    title, description, special, lit_day, lit_year, date_str = row
+
+    # Construct full title
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+    formatted_date = date_obj.strftime("%B %d, %Y")
+    homilist = "**HOMILIST**"
+    full_title = f"{formatted_date} – {lit_day or 'Unknown Sunday'} – Year {lit_year or 'Unknown'} – {homilist} – “{title}”"
+
     content = description
     if special:
         content += f"\n\nSpecial context: {special}"
@@ -62,7 +68,7 @@ def upload_to_wordpress(homily_path, original_mp3_path):
     # Step 2: Create podcast post
     post_url = f"{WP_URL}/wp-json/wp/v2/podcast"
     post_data = {
-        "title": title,
+        "title": full_title,
         "content": content,
         "status": "draft",
         "meta": {
