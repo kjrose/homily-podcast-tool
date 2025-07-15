@@ -1,0 +1,34 @@
+
+{
+  "openai_api_key": "your_openai_api_key_here",
+
+  "s3": {
+    "endpoint": "your_s3_endpoint_url",
+    "bucket": "your_s3_bucket_name",
+    "folder": "your_s3_folder_prefix",
+    "access_key": "your_s3_access_key",
+    "secret_key": "your_s3_secret_key"
+  },
+
+  "paths": {
+    "local_dir": "/path/to/local/directory",
+    "batch_file": "/path/to/batch/file.bat",
+    "db_path": "/path/to/homilies.db"
+  },
+
+  "email": {
+    "smtp_server": "smtp.example.com",
+    "smtp_port": 587,
+    "from": "sender@example.com",
+    "to": "recipient@example.com",
+    "user": "smtp_username",
+    "password": "smtp_password",
+    "subject": "Homily Processing Alert"
+  },
+
+  "wordpress": {
+    "url": "https://yourwordpresssite.com",
+    "user": "your_wp_username",
+    "app_password": "your_wp_application_password"
+  }
+}

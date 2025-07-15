@@ -1,0 +1,43 @@
+# Python compiled files
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.so
+
+# Config and sensitive files
+config.json
+.env
+
+# Database
+homilies.db
+
+# Local directories
+downloads/
+local_dir/
+temp/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Other
+*.bak
+*.tmp
