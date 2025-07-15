@@ -21,7 +21,7 @@ An efficient, automated tool for processing and sharing Catholic homilies. It do
 
 1. **Clone the Repository**:
 ````bash
-git clone https://github.com/yourusername/homily-podcast-tool.git
+git clone https://github.com/kjrose/homily-podcast-tool.git
 cd homily-podcast-tool
 ````
 
@@ -91,7 +91,7 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds.
 ```
 
 ## 🛠️ Project Structure
-
+````
 homily-podcast-tool/
 ├── __init__.py
 ├── audio_utils.py
@@ -103,6 +103,7 @@ homily-podcast-tool/
 ├── s3_utils.py
 ├── wordpress_utils.py
 └── main.py  # Entry point
+````
 
 ## 🤝 Contributing
 1. Fork the repository.
