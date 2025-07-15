@@ -7,7 +7,6 @@ from collections import deque
 
 from .config_loader import CFG
 from .email_utils import send_email_alert
-from .wordpress_utils import upload_to_wordpress
 
 BATCH_FILE = CFG["paths"]["batch_file"]
 
@@ -30,12 +29,12 @@ def run_batch_file(file_path):
 
 def parse_timestamp(ts: str) -> float:
     """Convert VTT/SRT timestamp to seconds."""
-    if "." in ts:
-        time_part, ms = ts.split(".")
-        h_m_s = time_part.split(":")
+    if '.' in ts:
+        time_part, ms = ts.split('.')
+        h_m_s = time_part.split(':')
         ms = int(ms)
     else:
-        h_m_s = ts.split(":")
+        h_m_s = ts.split(':')
         ms = 0
 
     if len(h_m_s) == 3:
@@ -84,17 +83,12 @@ def extract_homily_from_vtt(mp3_path):
 
         if "-->" in line:
             if current_time and current_text.strip():
-                entries.append(
-                    {
-                        "start": current_time[0],
-                        "end": current_time[1],
-                        "text": current_text.strip(),
-                    }
-                )
-            match = re.match(
-                r"(\d+:\d{2}(?::\d{2})?\.\d{3})\s-->\s(\d+:\d{2}(?::\d{2})?\.\d{3})",
-                line,
-            )
+                entries.append({
+                    "start": current_time[0],
+                    "end": current_time[1],
+                    "text": current_text.strip()
+                })
+            match = re.match(r"(\d+:\d{2}(?::\d{2})?\.\d{3})\s-->\s(\d+:\d{2}(?::\d{2})?\.\d{3})", line)
 
             if match:
                 start_str, end_str = match.groups()
@@ -113,18 +107,14 @@ def extract_homily_from_vtt(mp3_path):
 
     if invalid_ts_count > 5:
         print(f"⚠️ High number of invalid timestamps in VTT: {invalid_ts_count}")
-        send_email_alert(
-            mp3_path, f"High invalid timestamps in VTT ({invalid_ts_count})"
-        )
+        send_email_alert(mp3_path, f"High invalid timestamps in VTT ({invalid_ts_count})")
 
     if current_time and current_text.strip():
-        entries.append(
-            {
-                "start": current_time[0],
-                "end": current_time[1],
-                "text": current_text.strip(),
-            }
-        )
+        entries.append({
+            "start": current_time[0],
+            "end": current_time[1],
+            "text": current_text.strip()
+        })
 
     # Heuristics to find homily start and end
     found_gospel = False
@@ -140,7 +130,7 @@ def extract_homily_from_vtt(mp3_path):
         "at the intercession",
         "i believe in one god",
         "prayer of the faithful",
-        "prayers of the faithful",
+        "prayers of the faithful"
     ]
 
     for entry in entries:
@@ -169,13 +159,11 @@ def extract_homily_from_vtt(mp3_path):
 
     if homily_end is None:
         homily_end = entries[-1]["end"]
-
+    
     duration = homily_end - homily_start
     if duration < 60 or duration > 1200:  # e.g., <1min or >20min
         print(f"⚠️ Suspicious homily duration: {duration:.2f}s")
-        send_email_alert(
-            mp3_path, f"Suspicious homily duration extracted: {duration:.2f}s"
-        )
+        send_email_alert(mp3_path, f"Suspicious homily duration extracted: {duration:.2f}s")
 
     print(f"🎯 Extracting homily: {homily_start:.2f}s to {homily_end:.2f}s")
 
@@ -183,23 +171,22 @@ def extract_homily_from_vtt(mp3_path):
     ffmpeg_cmd = [
         "ffmpeg",
         "-y",
-        "-i",
-        mp3_path,
-        "-ss",
-        str(homily_start),
-        "-to",
-        str(homily_end),
-        "-c",
-        "copy",
-        output_path,
+        "-i", mp3_path,
+        "-ss", str(homily_start),
+        "-to", str(homily_end),
+        "-c", "copy",
+        output_path
     ]
 
     try:
         subprocess.run(ffmpeg_cmd, check=True)
         print(f"✅ Homily saved as: {output_path}")
-
+        
+        # Import here to avoid circular import
+        from .wordpress_utils import upload_to_wordpress
+        
         # Upload to WordPress as draft
-        # upload_to_wordpress(output_path, mp3_path)
+        upload_to_wordpress(output_path, mp3_path)
     except Exception as e:
         print(f"❌ FFmpeg error: {e}")
         send_email_alert(mp3_path, f"FFmpeg error while extracting homily:\n\n{e}")

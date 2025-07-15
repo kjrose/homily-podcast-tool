@@ -10,9 +10,11 @@ from homily_monitor import (
     s3_utils,
     audio_utils,
     helpers,
+    wordpress_utils  # Add this import
 )
 
 CFG = cfg_mod.CFG
+_ = database.get_conn()  # Initialize DB early
 
 
 def main():
@@ -39,26 +41,13 @@ def main():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Mass Downloader and Transcript Checker"
-    )
+    parser = argparse.ArgumentParser(description="Mass Downloader and Transcript Checker")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--test", action="store_true", help="Test")
-    group.add_argument(
-        "--latest",
-        action="store_true",
-        help="Run batch + GPT analysis on latest .mp3 file",
-    )
-    group.add_argument(
-        "--analyze-latest",
-        action="store_true",
-        help="Analyze the latest transcript file",
-    )
-    group.add_argument(
-        "--extract-latest-homily",
-        action="store_true",
-        help="Extract homily from latest .mp3 + VTT",
-    )
+    group.add_argument("--latest", action="store_true", help="Run batch + GPT analysis on latest .mp3 file")
+    group.add_argument("--analyze-latest", action="store_true", help="Analyze the latest transcript file")
+    group.add_argument("--extract-latest-homily", action="store_true", help="Extract homily from latest .mp3 + VTT")
+    group.add_argument("--upload-latest-homily", action="store_true", help="Upload the latest extracted homily to WordPress as a draft")  # Add this
     args = parser.parse_args()
 
     if args.test:
@@ -69,6 +58,8 @@ if __name__ == "__main__":
         helpers.run_latest_test()
     elif args.extract_latest_homily:
         helpers.extract_latest_homily()
+    elif args.upload_latest_homily:
+        wordpress_utils.upload_latest_homily()  # Add this handler
     else:
         try:
             main()

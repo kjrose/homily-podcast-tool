@@ -1,8 +1,10 @@
 # homily_monitor/gpt_utils.py
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 import openai
+from .database import get_conn
 from openai import OpenAI
 
 from homily_monitor.config_loader import CFG
@@ -65,7 +67,8 @@ Respond using this JSON format:
         group_key = sunday.strftime("%Y-%m-%d")
 
         # Insert into DB
-        cursor = CONN.cursor()
+        conn = get_conn()
+        cursor = conn.cursor()
         date_str = date.strftime("%Y-%m-%d")
         cursor.execute(
             """
@@ -81,7 +84,7 @@ Respond using this JSON format:
                 result["special"],
             ),
         )
-        CONN.commit()
+        conn.commit()
 
     except (
         openai.OpenAIError
