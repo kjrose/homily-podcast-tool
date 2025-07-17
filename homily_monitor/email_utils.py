@@ -46,3 +46,26 @@ def send_deviation_email(group_key, summary, details):
         print("📨 Homily deviation summary email sent.")
     except Exception as e:
         print(f"❌ Failed to send deviation summary email: {e}")
+
+def send_success_email(subject, message):
+    """
+    Send a success notification email.
+    
+    Args:
+        subject (str): The email subject (e.g., "Homily Upload Successful").
+        message (str): The body message detailing the success.
+    """
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = EMAIL_FROM
+    msg["To"] = EMAIL_TO
+    msg.set_content(message)
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+            smtp.starttls()
+            smtp.login(SMTP_USER, SMTP_PASS)
+            smtp.send_message(msg)
+        print(f"✅ Success email sent: {subject}")
+    except Exception as e:
+        print(f"❌ Failed to send success email: {e}")

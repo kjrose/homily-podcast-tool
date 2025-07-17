@@ -34,7 +34,7 @@ Read the following transcript of a Catholic homily and respond with the followin
 2. Liturgical year cycle (A, B, or C for Sundays; I or II for weekdays – infer from date and content)
 3. A podcast title for the homily (1 short phrase in Title Case)
 4. A description of the homily appropriate for a podcast (3-5 sentences)
-5. Any special context clues: was it a school Mass, baptism, funeral, etc.? (use "" if none)
+5. Any special clues for the mass, was the mass offered for someone? was it a school Mass? baptism, funeral, etc.? (use "" if none)
 6. Respond ONLY with the raw JSON object, without any markdown, code blocks, wrappers, or additional text like ```json. Start directly with {{ and end with }}.
 
 Transcript:

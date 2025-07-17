@@ -2,6 +2,8 @@
 
 import os
 from datetime import datetime, timezone
+from collections import Counter
+import json
 
 from homily_monitor.config_loader import CFG
 from .email_utils import send_email_alert
@@ -25,6 +27,25 @@ def validate_and_get_transcript(transcript_path, mp3_path=None):
             content = f.read().strip()
         if len(content) < 10:
             reason = "Transcript is blank or too short."
+            if mp3_path:
+                send_email_alert(mp3_path, reason)
+            print(f"⚠️ {reason} for {transcript_path}")
+            return None
+        # garbage (repetitive/low-variety) check
+        words = content.lower().split()
+        unique_words = set(words)
+        if len(words) > 50 and len(unique_words) < 10:  # Long but low diversity
+            reason = "Transcript appears to be garbage (highly repetitive)."
+            if mp3_path:
+                send_email_alert(mp3_path, reason)
+            print(f"⚠️ {reason} for {transcript_path}")
+            return None
+        
+        # More advanced repetition check
+        word_counts = Counter(words)
+        most_common_count = word_counts.most_common(1)[0][1] if word_counts else 0
+        if len(words) > 50 and most_common_count / len(words) > 0.5:  # One word/phrase dominates
+            reason = "Transcript appears to be garbage (dominant repetition)."
             if mp3_path:
                 send_email_alert(mp3_path, reason)
             print(f"⚠️ {reason} for {transcript_path}")
@@ -177,6 +198,6 @@ Respond in JSON.
                     cursor.execute(
                         "INSERT INTO compared_groups (group_key) VALUES (?)", (gk,)
                     )
-                    CONN.commit()
+                    conn.commit()
         except ValueError:
             pass  # Invalid group_key format

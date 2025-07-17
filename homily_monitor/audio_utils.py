@@ -122,6 +122,12 @@ def extract_homily_from_vtt(mp3_path):
     homily_end = None
     recent_texts = None
 
+    gospel_end_markers = [
+        "the gospel of the lord",
+        "gospel of the lord",
+        "praise to you"
+    ]
+
     end_markers = [
         "we pray to the lord",
         "lord, hear our prayer",
@@ -136,7 +142,7 @@ def extract_homily_from_vtt(mp3_path):
     for entry in entries:
         text = entry["text"].lower()
 
-        if "the gospel of the lord" in text or "praise to you" in text:
+        if any(marker in text for marker in gospel_end_markers):
             found_gospel = True
             continue
 
