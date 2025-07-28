@@ -20,13 +20,39 @@ WP_APP_PASS = CFG["wordpress"]["app_password"]
 LOCAL_DIR = CFG["paths"]["local_dir"]
 
 def generate_podcast_image(title, description):
-    """Generate a square image with DALL-E based on homily content."""
-    image_prompt = f"A serene, inspirational square podcast cover for a Catholic homily. Overlay the title '{title}' in elegant, readable font at the bottom. Incorporate subtle religious symbols like a cross or Bible, with themes from: {description[:200]}. Use warm, inviting colors."
+    # Step 1: Use GPT to create an optimized DALL-E prompt
+    prompt_craft = f"""
+You are a creative AI artist specializing in podcast cover art for Catholic homilies.
+
+Given the homily title: '{title}'
+And description: '{description[:300]}' (truncated if long)
+
+Craft a highly detailed, effective DALL-E prompt (50-100 words) for a 1024x1024 square image. Include:
+- Vivid, engaging visual themes inspired by the homily (e.g., religious symbols, serene landscapes).
+- Warm, inviting colors with high contrast for podcast thumbnails.
+- Overlay the title '{title}' in elegant, readable font.
+- Style: Realistic or illustrative, cinematic lighting, high detail.
+- Avoid boring/generic; make it dynamic and thematic.
+
+Respond ONLY with the raw DALL-E prompt string, no additional text.
+"""
+
+    try:
+        gpt_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt_craft}],
+            temperature=0.7,
+        )
+        refined_prompt = gpt_response.choices[0].message.content.strip()
+        print(f"Refined DALL-E prompt: {refined_prompt}")
+    except Exception as e:
+        print(f"❌ Failed to craft prompt with GPT: {e}")
+        refined_prompt = f"A serene, inspirational square podcast cover for a Catholic homily titled '{title}'. Incorporate subtle religious symbols like a cross or Bible, with themes from: {description[:200]}. Use warm, inviting colors; overlay title in elegant font."  # Fallback
     
     try:
         response = client.responses.create(
             model="gpt-4.1-mini",
-            input=image_prompt,
+            input=refined_prompt,
             tools=[{"type":"image_generation"}]
         )
         
@@ -74,7 +100,7 @@ def upload_to_wordpress(homily_path, original_mp3_path):
     date_obj = datetime.strptime(date_str, "%Y-%m-%d")
     formatted_date = date_obj.strftime("%B %d, %Y")
     homilist = "**HOMILIST**"
-    full_title = f"{formatted_date} – {lit_day or 'Unknown Sunday'} – Year {lit_year or 'Unknown'} – {homilist} – “{title}”"
+    full_title = f"{formatted_date} – {lit_day or 'Unknown Sunday'} – {lit_year or 'Unknown'} – {homilist} – “{title}”"
 
     content = description
     if special:
