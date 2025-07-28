@@ -8,7 +8,6 @@ def load_config(file_path="config.json"):
     except FileNotFoundError:
         print("❌ Config file not found.")
         exit(1)
-    # ... other exceptions
 
 
 CFG = load_config()  # Global config
