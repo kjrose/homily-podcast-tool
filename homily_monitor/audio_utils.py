@@ -59,10 +59,10 @@ def is_dead_air(mp3_path, silence_thresh_dB=-40, min_silence_len=1000, silence_r
             return True
         return False
     except subprocess.CalledProcessError as e:
-        logger.error(f"❌ ffmpeg silencedetect failed for {mp3_path}: {e.stderr}")
+        logger.error(f"ffmpeg silencedetect failed for {mp3_path}: {e.stderr}")
         return False
     except Exception as e:
-        logger.error(f"❌ Audio analysis failed for {mp3_path}: {e}")
+        logger.error(f"Audio analysis failed for {mp3_path}: {e}")
         return False
 
 def run_batch_file(file_path, batch_file=BATCH_FILE):
@@ -70,9 +70,9 @@ def run_batch_file(file_path, batch_file=BATCH_FILE):
     if is_dead_air(file_path):
         return  # Skip processing
     try:
-        logger.info(f"⚙️ Running batch file on {file_path}...")
+        logger.info(f"Running batch file on {file_path}...")
         subprocess.run(f'"{batch_file}" "{file_path}"', shell=True, check=True)
-        logger.info("✅ Batch file completed.")
+        logger.info("Batch file completed.")
     except subprocess.CalledProcessError as e:
         logger.error(f"Batch file failed with return code {e.returncode} for {file_path}: {e}")
         send_email_alert(file_path, f"Batch file execution failed:\n\n{e}")
@@ -106,7 +106,7 @@ def parse_timestamp(ts: str) -> float:
 def extract_homily_from_vtt(mp3_path):
     vtt_path = os.path.splitext(mp3_path)[0] + ".vtt"
     if not os.path.exists(vtt_path):
-        logger.error(f"❌ No VTT file found for {mp3_path}")
+        logger.error(f"No VTT file found for {mp3_path}")
         send_email_alert(mp3_path, "VTT file is missing.")
         return
 
@@ -115,15 +115,15 @@ def extract_homily_from_vtt(mp3_path):
             lines = f.readlines()
         logger.debug(f"Loaded VTT file {vtt_path} with {len(lines)} lines")
     except FileNotFoundError:  # Safety
-        logger.error(f"❌ VTT file {vtt_path} not found (race condition?) for {mp3_path}")
+        logger.error(f"VTT file {vtt_path} not found (race condition?) for {mp3_path}")
         send_email_alert(mp3_path, "VTT file missing.")
         return
     except UnicodeDecodeError as e:
-        logger.error(f"❌ Encoding error reading VTT {vtt_path} for {mp3_path}: {e}")
+        logger.error(f"Encoding error reading VTT {vtt_path} for {mp3_path}: {e}")
         send_email_alert(mp3_path, f"Encoding error in VTT: {e}")
         return
     except Exception as e:
-        logger.error(f"❌ Unexpected error reading VTT {vtt_path} for {mp3_path}: {e}")
+        logger.error(f"Unexpected error reading VTT {vtt_path} for {mp3_path}: {e}")
         send_email_alert(mp3_path, f"Unexpected error reading VTT: {e}")
         return
 
@@ -154,15 +154,15 @@ def extract_homily_from_vtt(mp3_path):
                     current_time = (start, end)
                     current_text = ""
                 except ValueError as e:
-                    logger.warning(f"⚠️ Invalid timestamp in VTT line '{line}' for {mp3_path}: {e}")
+                    logger.warning(f"Invalid timestamp in VTT line '{line}' for {mp3_path}: {e}")
                     invalid_ts_count += 1
             else:
-                logger.warning(f"⚠️ Unmatched timestamp line in VTT: {line} for {mp3_path}")
+                logger.warning(f"Unmatched timestamp line in VTT: {line} for {mp3_path}")
         elif current_time:
             current_text += " " + line
 
     if invalid_ts_count > 5:
-        logger.warning(f"⚠️ High number of invalid timestamps in VTT for {mp3_path}: {invalid_ts_count}")
+        logger.warning(f"High number of invalid timestamps in VTT for {mp3_path}: {invalid_ts_count}")
         send_email_alert(mp3_path, f"High invalid timestamps in VTT ({invalid_ts_count})")
 
     if current_time and current_text.strip():
@@ -215,7 +215,7 @@ def extract_homily_from_vtt(mp3_path):
 
     # GPT fallback only for start if not found
     if homily_start is None:
-        logger.warning(f"⚠️ Heuristics failed; using GPT fallback for homily start for {mp3_path}")
+        logger.warning(f"Heuristics failed; using GPT fallback for homily start for {mp3_path}")
         # Compile full VTT text for GPT
         full_vtt = "\n".join(lines)  # Raw VTT as string
         
@@ -250,11 +250,11 @@ VTT:
             else:
                 raise ValueError("GPT could not determine start")
         except json.JSONDecodeError as e:
-            logger.error(f"❌ Invalid JSON from GPT for {mp3_path}: {e} - Content: {content}")
+            logger.error(f"Invalid JSON from GPT for {mp3_path}: {e} - Content: {content}")
             send_email_alert(mp3_path, "GPT returned invalid JSON for homily detection.")
             return
         except Exception as e:
-            logger.error(f"❌ GPT fallback failed for {mp3_path}: {e}")
+            logger.error(f"GPT fallback failed for {mp3_path}: {e}")
             send_email_alert(mp3_path, "GPT homily detection failed.")
             return
 
@@ -276,16 +276,16 @@ VTT:
             homily_end = entries[-1]["end"]
 
     if homily_start is None:
-        logger.error(f"⚠️ Could not locate homily start for {mp3_path}")
+        logger.error(f"Could not locate homily start for {mp3_path}")
         send_email_alert(mp3_path, "Could not locate homily start in VTT.")
         return
 
     duration = homily_end - homily_start
     if duration < 60 or duration > 1200:  # e.g., <1min or >20min
-        logger.warning(f"⚠️ Suspicious homily duration: {duration:.2f}s for {mp3_path}")
+        logger.warning(f"Suspicious homily duration: {duration:.2f}s for {mp3_path}")
         send_email_alert(mp3_path, f"Suspicious homily duration extracted: {duration:.2f}s")
 
-    logger.info(f"🎯 Extracting homily: {homily_start:.2f}s to {homily_end:.2f}s for {mp3_path}")
+    logger.info(f"Extracting homily: {homily_start:.2f}s to {homily_end:.2f}s for {mp3_path}")
 
     output_path = os.path.splitext(mp3_path)[0].replace("Mass-", "Homily-") + ".mp3"
     ffmpeg_cmd = [
@@ -300,7 +300,7 @@ VTT:
 
     try:
         subprocess.run(ffmpeg_cmd, check=True)
-        logger.info(f"✅ Homily saved as: {output_path}")
+        logger.info(f"Homily saved as: {output_path}")
         
         # Import here to avoid circular import
         from .wordpress_utils import upload_to_wordpress
@@ -308,5 +308,5 @@ VTT:
         # Upload to WordPress as draft
         upload_to_wordpress(output_path, mp3_path)
     except Exception as e:
-        logger.error(f"❌ FFmpeg error for {mp3_path}: {e}")
+        logger.error(f"FFmpeg error for {mp3_path}: {e}")
         send_email_alert(mp3_path, f"FFmpeg error while extracting homily:\n\n{e}")

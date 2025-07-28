@@ -64,7 +64,7 @@ Respond using this JSON format:
         content = response.choices[0].message.content
         logger.debug(f"GPT response content: {content}")
         result = json.loads(content)  # Validate JSON
-        logger.info(f"✅ Successfully parsed GPT response for {mp3_path}")
+        logger.info(f"Successfully parsed GPT response for {mp3_path}")
    
         # Fallback for last_mod if not provided
         if last_mod is None:
@@ -89,13 +89,13 @@ Respond using this JSON format:
         date_str = date.strftime("%Y-%m-%d")
         logger.info(f"Inserting analysis for {mp3_path} into database with group_key {group_key}")
         insert_homily(group_key, os.path.basename(mp3_path), date_str, result["title"], result["description"], result["special"], result["liturgical_day"], result["lit_year"])
-        logger.info(f"✅ Inserted analysis for {mp3_path} into database")
+        logger.info(f"Inserted analysis for {mp3_path} into database")
     except openai.OpenAIError as e:
-        logger.error(f"❌ OpenAI API error for {mp3_path}: {e}")
+        logger.error(f"OpenAI API error for {mp3_path}: {e}")
         send_email_alert(mp3_path, f"GPT analysis failed (API error):\n\n{e}")
     except json.JSONDecodeError as e:
-        logger.error(f"❌ Invalid JSON from GPT for {mp3_path}: {e} - Content: {content}")
+        logger.error(f"Invalid JSON from GPT for {mp3_path}: {e} - Content: {content}")
         send_email_alert(mp3_path, f"GPT response not valid JSON:\n\n{content}\nError: {e}")
     except Exception as e:
-        logger.error(f"❌ Unexpected error in GPT analysis for {mp3_path}: {e}")
+        logger.error(f"Unexpected error in GPT analysis for {mp3_path}: {e}")
         send_email_alert(mp3_path, f"GPT analysis failed:\n\n{e}")

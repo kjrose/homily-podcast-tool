@@ -23,7 +23,7 @@ def validate_and_get_transcript(transcript_path, mp3_path=None):
     if not os.path.exists(transcript_path):
         reason = "Transcript file is missing."
         if mp3_path:
-            logger.error(f"❌ {reason} for {transcript_path}")
+            logger.error(f"{reason} for {transcript_path}")
             send_email_alert(mp3_path, reason)
         return None
     try:
@@ -32,7 +32,7 @@ def validate_and_get_transcript(transcript_path, mp3_path=None):
         if len(content) < 10:
             reason = "Transcript is blank or too short."
             if mp3_path:
-                logger.warning(f"⚠️ {reason} for {transcript_path}")
+                logger.warning(f"{reason} for {transcript_path}")
                 send_email_alert(mp3_path, reason)
             return None
         # Garbage (repetitive/low-variety) check
@@ -41,7 +41,7 @@ def validate_and_get_transcript(transcript_path, mp3_path=None):
         if len(words) > 50 and len(unique_words) < 10:  # Long but low diversity
             reason = "Transcript appears to be garbage (highly repetitive)."
             if mp3_path:
-                logger.warning(f"⚠️ {reason} for {transcript_path}")
+                logger.warning(f"{reason} for {transcript_path}")
                 send_email_alert(mp3_path, reason)
             return None
         
@@ -51,21 +51,21 @@ def validate_and_get_transcript(transcript_path, mp3_path=None):
         if len(words) > 50 and most_common_count / len(words) > 0.5:  # One word/phrase dominates
             reason = "Transcript appears to be garbage (dominant repetition)."
             if mp3_path:
-                logger.warning(f"⚠️ {reason} for {transcript_path}")
+                logger.warning(f"{reason} for {transcript_path}")
                 send_email_alert(mp3_path, reason)
             return None
-        logger.debug(f"✅ Valid transcript loaded from {transcript_path}")
+        logger.debug(f"Valid transcript loaded from {transcript_path}")
         return content
     except UnicodeDecodeError as e:
         reason = f"Encoding error in transcript: {e}"
         if mp3_path:
-            logger.error(f"❌ {reason} for {transcript_path}")
+            logger.error(f"{reason} for {transcript_path}")
             send_email_alert(mp3_path, reason)
         return None
     except Exception as e:
         reason = f"Unexpected error reading transcript: {e}"
         if mp3_path:
-            logger.error(f"❌ {reason} for {transcript_path}")
+            logger.error(f"{reason} for {transcript_path}")
             send_email_alert(mp3_path, reason)
         return None
 
@@ -89,7 +89,7 @@ def analyze_latest_transcript():
         if f.lower().endswith(".txt")
     ]
     if not txt_files:
-        logger.error("❌ No transcript files found.")
+        logger.error("No transcript files found.")
         return
     latest_file = max(txt_files, key=os.path.getmtime)
     logger.info(f"📝 Analyzing latest transcript: {latest_file}")
@@ -108,13 +108,13 @@ def get_latest_mp3(directory):
             if f.lower().endswith(".mp3") and f.startswith("Mass-")
         ]
         if not mp3_files:
-            logger.warning("⚠️ No MP3 files found in directory.")
+            logger.warning("No MP3 files found in directory.")
             return None
         latest = max(mp3_files, key=os.path.getmtime)
         logger.debug(f"Found latest MP3: {latest}")
         return latest
     except OSError as e:
-        logger.error(f"❌ Error accessing directory {directory}: {e}")
+        logger.error(f"Error accessing directory {directory}: {e}")
         send_email_alert(directory, f"Directory access error: {e}")
         return None
 
@@ -123,7 +123,7 @@ def extract_latest_homily():
     logger.info("Extracting latest homily...")
     latest = get_latest_mp3(LOCAL_DIR)
     if not latest:
-        logger.error("❌ No MP3 files found in directory.")
+        logger.error("No MP3 files found in directory.")
         return
 
     logger.info(f"🔍 Extracting homily from latest file: {latest}")
@@ -134,10 +134,10 @@ def run_latest_test():
     logger.info("Running latest test...")
     latest = get_latest_mp3(LOCAL_DIR)
     if not latest:
-        logger.error("❌ No .mp3 files found.")
+        logger.error("No .mp3 files found.")
         return
 
-    logger.info(f"🎯 Found latest MP3: {latest}")
+    logger.info(f"Found latest MP3: {latest}")
     run_batch_file(latest)
 
     transcript_path = os.path.splitext(latest)[0] + ".txt"
@@ -148,7 +148,7 @@ def run_latest_test():
 
 
 def test_email():
-    logger.info("📤 Sending test alert email...")
+    logger.info("Sending test alert email...")
     send_email_alert("TEST-Mass.mp3", "This is a test of the transcript alert system.")
 
 
@@ -210,4 +210,4 @@ Respond in JSON.
                     cursor.execute("INSERT INTO compared_groups (group_key) VALUES (?)", (gk,))
                     conn.commit()
         except ValueError:
-            logger.warning(f"⚠️ Invalid group_key format for {gk}")
+            logger.warning(f"Invalid group_key format for {gk}")

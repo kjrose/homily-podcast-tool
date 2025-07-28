@@ -50,11 +50,11 @@ def list_s3_files():
             logger.debug(f"Continuing listing with token: {continuation_token}")
         except ClientError as e:
             error_msg = e.response["Error"]["Message"]
-            logger.error(f"❌ S3 client error listing files in {S3_BUCKET}: {error_msg}")
+            logger.error(f"S3 client error listing files in {S3_BUCKET}: {error_msg}")
             send_email_alert("S3 Listing Failure", f"S3 client error listing bucket {S3_BUCKET}: {e}")
             return []
         except Exception as e:
-            logger.error(f"❌ Error listing S3 files in {S3_BUCKET}: {e}")
+            logger.error(f"Error listing S3 files in {S3_BUCKET}: {e}")
             send_email_alert("S3 Listing Failure", f"Error listing files in bucket {S3_BUCKET}: {e}")
             return []  # Or raise if you want to stop main loop
     return files
@@ -69,13 +69,13 @@ def is_file_within_last_48_hours(last_modified):
 
 def download_file(s3_key, local_path):
     try:
-        logger.info(f"⬇️ Downloading {s3_key} to {local_path}...")
+        logger.info(f"Downloading {s3_key} to {local_path}...")
         s3_client.download_file(S3_BUCKET, s3_key, local_path)
-        logger.info("✅ Download successful.")
+        logger.info("Download successful.")
     except ClientError as e:
         error_msg = e.response["Error"]["Message"]
-        logger.error(f"❌ S3 client error downloading {s3_key} to {local_path}: {error_msg}")
+        logger.error(f"S3 client error downloading {s3_key} to {local_path}: {error_msg}")
         send_email_alert(local_path, f"S3 client error for {s3_key}: {e}")
     except Exception as e:
-        logger.error(f"❌ Unexpected error downloading {s3_key} to {local_path}: {e}")
+        logger.error(f"Unexpected error downloading {s3_key} to {local_path}: {e}")
         send_email_alert(local_path, f"Unexpected download error for {s3_key}: {e}")

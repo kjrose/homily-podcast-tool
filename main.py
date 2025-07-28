@@ -17,23 +17,27 @@ from homily_monitor import (
 )
 
 # Configure logging with UTF-8 encoding
-log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')  # Removed encoding
+log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 log_file = os.path.join(os.path.dirname(__file__), 'homily_monitor.log')
-file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')  # UTF-8 here
+file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
 file_handler.setFormatter(log_formatter)
 logger = logging.getLogger('HomilyMonitor')
 logger.setLevel(logging.INFO)
 logger.addHandler(file_handler)
-console_handler = logging.StreamHandler(sys.stdout)  # Use stdout for better UTF-8 support
+console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(log_formatter)
 logger.addHandler(console_handler)
 
-CFG = cfg_mod.CFG
-_ = database.get_conn()  # Initialize DB early
+try:
+    CFG = cfg_mod.CFG
+except Exception as e:
+    logger.critical(f"Initialization failed due to config error: {e}")
+    sys.exit(1)
 
+_ = database.get_conn()
 
 def main():
-    logger.info("📡 Starting S3 monitoring...")
+    logger.info("Starting S3 monitoring...")
     while True:
         try:
             s3_files = s3_utils.list_s3_files()
@@ -94,4 +98,4 @@ if __name__ == "__main__":
         try:
             main()
         except KeyboardInterrupt:
-            logger.info("🛑 Monitoring stopped by user.")
+            logger.info("Monitoring stopped by user.")

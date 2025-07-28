@@ -30,9 +30,9 @@ def send_email_alert(mp3_path, reason="The transcript appears to be missing or e
             smtp.starttls()
             smtp.login(SMTP_USER, SMTP_PASS)
             smtp.send_message(msg)
-        logger.info(f"📧 Alert email sent for {mp3_path}")
+        logger.info(f"Alert email sent for {mp3_path}")
     except Exception as e:
-        logger.error(f"❌ Failed to send alert email for {mp3_path}: {e}")
+        logger.error(f"Failed to send alert email for {mp3_path}: {e}")
 
 
 def send_deviation_email(group_key, summary, details):
@@ -49,7 +49,7 @@ def send_deviation_email(group_key, summary, details):
             smtp.send_message(msg)
         logger.info("📨 Homily deviation summary email sent.")
     except Exception as e:
-        logger.error(f"❌ Failed to send deviation summary email for weekend {group_key}: {e}")
+        logger.error(f"Failed to send deviation summary email for weekend {group_key}: {e}")
 
 
 def send_success_email(subject, message):
@@ -71,6 +71,6 @@ def send_success_email(subject, message):
             smtp.starttls()
             smtp.login(SMTP_USER, SMTP_PASS)
             smtp.send_message(msg)
-        logger.info(f"✅ Success email sent: {subject}")
+        logger.info(f"Success email sent: {subject}")
     except Exception as e:
-        logger.error(f"❌ Failed to send success email for {subject}: {e}")
+        logger.error(f"Failed to send success email for {subject}: {e}")

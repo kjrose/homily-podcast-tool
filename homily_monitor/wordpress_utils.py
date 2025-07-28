@@ -52,7 +52,7 @@ Respond ONLY with the raw DALL-E prompt string, no additional text.
         refined_prompt = gpt_response.choices[0].message.content.strip()
         logger.debug(f"Refined DALL-E prompt: {refined_prompt}")
     except Exception as e:
-        logger.error(f"❌ Failed to craft prompt with GPT for {title}: {e}")
+        logger.error(f"Failed to craft prompt with GPT for {title}: {e}")
         refined_prompt = f"A serene, inspirational square podcast cover for a Catholic homily titled '{title}'. Incorporate subtle religious symbols like a cross or Bible, with themes from: {description[:200]}. Use warm, inviting colors; overlay title in elegant font."  # Fallback
     
     try:
@@ -75,10 +75,10 @@ Respond ONLY with the raw DALL-E prompt string, no additional text.
             logger.debug(f"Generated image data for {title}")
             return BytesIO(image_bytes)
         else:
-            logger.warning(f"❌ No image data available for {title}")
+            logger.warning(f"No image data available for {title}")
             return None
     except Exception as e:
-        logger.error(f"❌ Failed to generate image for {title}: {e}")
+        logger.error(f"Failed to generate image for {title}: {e}")
         return None
 
 def upload_to_wordpress(homily_path, original_mp3_path):
@@ -89,7 +89,7 @@ def upload_to_wordpress(homily_path, original_mp3_path):
     cursor.execute("SELECT title, description, special, liturgical_day, lit_year, date FROM homilies WHERE filename = ?", (filename,))
     row = cursor.fetchone()
     if not row:
-        logger.warning(f"⚠️ No analysis found for {filename}; generating automatically...")
+        logger.warning(f"No analysis found for {filename}; generating automatically...")
         # Generate analysis if missing
         transcript_path = os.path.splitext(original_mp3_path)[0] + ".txt"
         content = validate_and_get_transcript(transcript_path, original_mp3_path)
@@ -100,7 +100,7 @@ def upload_to_wordpress(homily_path, original_mp3_path):
             cursor.execute("SELECT title, description, special, liturgical_day, lit_year, date FROM homilies WHERE filename = ?", (filename,))
             row = cursor.fetchone()
         if not row:
-            logger.error(f"❌ Failed to generate analysis for {filename}")
+            logger.error(f"Failed to generate analysis for {filename}")
             send_email_alert(homily_path, "Failed to generate analysis for homily upload.")
             return
 
@@ -137,9 +137,9 @@ def upload_to_wordpress(homily_path, original_mp3_path):
             media_data = response.json()
             featured_media_id = media_data['id']
             cover_image_url = media_data['source_url']
-            logger.info("✅ Podcast image uploaded.")
+            logger.info("Podcast image uploaded.")
         else:
-            logger.error(f"❌ Image upload failed for {full_title}: {response.text}")
+            logger.error(f"Image upload failed for {full_title}: {response.text}")
             send_email_alert(homily_path, f"Image upload to WP failed: {response.text}")
 
     # Step 1: Upload audio media
@@ -151,7 +151,7 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         response = requests.post(media_url, auth=auth, headers=headers, files={'file': f})
     
     if response.status_code != 201:
-        logger.error(f"❌ Media upload failed for {full_title}: {response.text}")
+        logger.error(f"Media upload failed for {full_title}: {response.text}")
         send_email_alert(homily_path, f"Media upload to WP failed: {response.text}")
         return
 
@@ -178,12 +178,12 @@ def upload_to_wordpress(homily_path, original_mp3_path):
     response = requests.post(post_url, auth=auth, json=post_data)
     
     if response.status_code != 201:
-        logger.error(f"❌ Post creation failed for {full_title}: {response.text}")
+        logger.error(f"Post creation failed for {full_title}: {response.text}")
         send_email_alert(homily_path, f"Podcast post creation failed: {response.text}")
         return
 
     send_success_email("Homily Upload Successful", f"Successfully uploaded homily to WordPress as a draft: {full_title} \n\nView draft: {response.json()['link']} \n\nAudio URL: {audio_url} \n\nImage URL: {cover_image_url}")
-    logger.info(f"✅ Uploaded homily as draft to WordPress: {response.json()['link']}")
+    logger.info(f"Uploaded homily as draft to WordPress: {response.json()['link']}")
 
 
 def upload_latest_homily():
@@ -195,11 +195,11 @@ def upload_latest_homily():
         if f.lower().endswith(".mp3") and f.startswith("Homily-")
     ]
     if not homily_files:
-        logger.error("❌ No homily files found.")
+        logger.error("No homily files found.")
         return
 
     latest_homily = max(homily_files, key=os.path.getmtime)
-    logger.info(f"📤 Uploading latest homily: {latest_homily}")
+    logger.info(f"Uploading latest homily: {latest_homily}")
 
     # Infer original MP3 filename (replace "Homily-" with "Mass-")
     original_filename = os.path.basename(latest_homily).replace("Homily-", "Mass-")
@@ -207,7 +207,7 @@ def upload_latest_homily():
 
     # Check if original exists (for DB lookup)
     if not os.path.exists(original_mp3_path):
-        logger.error(f"❌ Original MP3 not found for {latest_homily}")
+        logger.error(f"Original MP3 not found for {latest_homily}")
         send_email_alert(latest_homily, "Original MP3 missing for latest homily upload.")
         return
 

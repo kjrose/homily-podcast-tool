@@ -55,7 +55,7 @@ python main.py
 
 The script runs in monitoring mode by default, polling S3 every 60 seconds.
 
-## ⚙️ Configuration
+## Configuration
 
 `config.json` structure (see `config.json.sample` for a template):
 ```json

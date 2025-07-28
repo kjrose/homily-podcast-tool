@@ -55,12 +55,12 @@ def get_conn():
                 cursor.execute("ALTER TABLE homilies ADD COLUMN lit_year TEXT DEFAULT ''")
             
             CONN.commit()
-            logger.info(f"✅ Database connection established and schema updated for {DB_PATH}")
+            logger.info(f"Database connection established and schema updated for {DB_PATH}")
         except sqlite3.Error as e:
-            logger.error(f"❌ Database error connecting to {DB_PATH}: {e}")
+            logger.error(f"Database error connecting to {DB_PATH}: {e}")
             raise
         except Exception as e:
-            logger.error(f"❌ Unexpected error initializing database {DB_PATH}: {e}")
+            logger.error(f"Unexpected error initializing database {DB_PATH}: {e}")
             raise
     
     return CONN
@@ -76,10 +76,10 @@ def insert_homily(group_key, filename, date, title, description, special, liturg
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (group_key, filename, date, title, description, special, liturgical_day, lit_year))
         conn.commit()
-        logger.info(f"✅ Successfully inserted homily: {filename}")
+        logger.info(f"Successfully inserted homily: {filename}")
     except sqlite3.IntegrityError as e:
-        logger.error(f"❌ Integrity error inserting homily {filename}: {e}")
+        logger.error(f"Integrity error inserting homily {filename}: {e}")
         raise
     except Exception as e:
-        logger.error(f"❌ Error inserting homily {filename}: {e}")
+        logger.error(f"Error inserting homily {filename}: {e}")
         raise
