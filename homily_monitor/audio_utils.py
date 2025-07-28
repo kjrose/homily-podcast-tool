@@ -1,4 +1,4 @@
-# homily_monitor/audio_utils.py
+# homily_monitor/audio_utils.py (updated is_dead_air)
 
 import os
 import re
@@ -6,11 +6,12 @@ import subprocess
 import json
 from collections import deque
 import logging
+from pydub import AudioSegment
+from pydub.silence import detect_silence  # Explicit import
 
 from .config_loader import CFG
 from .email_utils import send_email_alert
 from .gpt_utils import client
-from pydub import AudioSegment
 
 # Configure logging (reusing the logger from main.py)
 logger = logging.getLogger('HomilyMonitor')
@@ -18,15 +19,36 @@ logger = logging.getLogger('HomilyMonitor')
 BATCH_FILE = CFG["paths"]["batch_file"]
 
 def is_dead_air(mp3_path, silence_thresh_dB=-40, min_silence_len=1000, silence_ratio_threshold=0.9):
-    """Check if MP3 is mostly dead air (silent). Returns True if silent."""
+    """Check if MP3 is mostly dead air using ffmpeg silencedetect. Returns True if silent."""
     try:
-        audio = AudioSegment.from_mp3(mp3_path)
-        logger.debug(f"Loaded audio: duration {len(audio)/1000}s")
-        silent_ranges = audio.detect_silence(silence_thresh_dB, min_silence_len)
-        logger.debug(f"Silent ranges detected: {silent_ranges}")
+        # Run ffmpeg silencedetecty
+        logger.debug(f"Running silencedetect on {mp3_path} with thresh {silence_thresh_dB}dB, min_len {min_silence_len/1000}s")
+        cmd = [
+            "ffmpeg",
+            "-i", mp3_path,
+            "-af", f"silencedetect=n={silence_thresh_dB}dB:d={min_silence_len/1000}",
+            "-f", "null",
+            "-y", "NUL"  # Windows null output
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        output = result.stderr  # silencedetect logs to stderr
         
-        total_silence_duration = sum(end - start for start, end in silent_ranges) / 1000  # ms to s
-        total_duration = len(audio) / 1000
+        # Parse silence durations from output (e.g., "silence_duration: 1.234")
+        silent_durations = []
+        for line in output.splitlines():
+            if "silence_duration" in line:
+                duration_str = line.split("silence_duration: ")[1].strip()
+                silent_durations.append(float(duration_str))
+        
+        total_silence_duration = sum(silent_durations)
+        # Get total duration from ffmpeg output (e.g., "Duration: 00:05:30.00")
+        duration_line = next((line for line in output.splitlines() if "Duration:" in line), None)
+        if duration_line:
+            duration_str = duration_line.split("Duration: ")[1].split(",")[0]
+            h, m, s = map(float, duration_str.split(":"))
+            total_duration = h * 3600 + m * 60 + s
+        else:
+            total_duration = 1  # Avoid division by zero
         
         silence_ratio = total_silence_duration / total_duration if total_duration > 0 else 1
         logger.debug(f"Silence ratio: {silence_ratio}")
@@ -36,22 +58,26 @@ def is_dead_air(mp3_path, silence_thresh_dB=-40, min_silence_len=1000, silence_r
             send_email_alert(mp3_path, "The file is dead air.")
             return True
         return False
+    except subprocess.CalledProcessError as e:
+        logger.error(f"❌ ffmpeg silencedetect failed for {mp3_path}: {e.stderr}")
+        return False
     except Exception as e:
-        logger.error(f"Audio analysis failed for {mp3_path}: {e}")
+        logger.error(f"❌ Audio analysis failed for {mp3_path}: {e}")
         return False
 
-def run_batch_file(file_path):
+def run_batch_file(file_path, batch_file=BATCH_FILE):
+    """Run the batch file on the given file path."""
     if is_dead_air(file_path):
         return  # Skip processing
     try:
         logger.info(f"⚙️ Running batch file on {file_path}...")
-        subprocess.run(f'"{BATCH_FILE}" "{file_path}"', shell=True, check=True)
+        subprocess.run(f'"{batch_file}" "{file_path}"', shell=True, check=True)
         logger.info("✅ Batch file completed.")
     except subprocess.CalledProcessError as e:
         logger.error(f"Batch file failed with return code {e.returncode} for {file_path}: {e}")
         send_email_alert(file_path, f"Batch file execution failed:\n\n{e}")
     except FileNotFoundError:
-        logger.error(f"Batch file {BATCH_FILE} not found for {file_path}")
+        logger.error(f"Batch file {batch_file} not found for {file_path}")
         send_email_alert(file_path, "Batch file is missing.")
     except Exception as e:
         logger.error(f"Unexpected error running batch file for {file_path}: {e}")
@@ -189,7 +215,7 @@ def extract_homily_from_vtt(mp3_path):
 
     # GPT fallback only for start if not found
     if homily_start is None:
-        logger.warning("⚠️ Heuristics failed; using GPT fallback for homily start for {mp3_path}")
+        logger.warning(f"⚠️ Heuristics failed; using GPT fallback for homily start for {mp3_path}")
         # Compile full VTT text for GPT
         full_vtt = "\n".join(lines)  # Raw VTT as string
         
@@ -250,7 +276,7 @@ VTT:
             homily_end = entries[-1]["end"]
 
     if homily_start is None:
-        logger.error("⚠️ Could not locate homily start for {mp3_path}")
+        logger.error(f"⚠️ Could not locate homily start for {mp3_path}")
         send_email_alert(mp3_path, "Could not locate homily start in VTT.")
         return
 
