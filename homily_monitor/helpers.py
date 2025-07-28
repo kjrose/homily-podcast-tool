@@ -9,7 +9,7 @@ import logging
 from homily_monitor.config_loader import CFG
 from .email_utils import send_email_alert
 from .gpt_utils import analyze_transcript_with_gpt
-from .audio_utils import extract_homily_from_vtt
+from .audio_utils import extract_homily_from_vtt, run_batch_file 
 from .gpt_utils import client
 from .database import get_conn
 
@@ -204,7 +204,7 @@ Respond in JSON.
 
                         if compare_result["status"] == "deviations":
                             logger.info(f"Deviations detected for {gk}, sending email...")
-                            send_deviation_email(gk, compare_result["summary"], summaries_str)
+                            #send_deviation_email(gk, compare_result["summary"], summaries_str)
                     # Mark as compared
                     logger.info(f"Marking {gk} as compared in database...")
                     cursor.execute("INSERT INTO compared_groups (group_key) VALUES (?)", (gk,))

@@ -15,6 +15,8 @@ from pydub import AudioSegment
 # Configure logging (reusing the logger from main.py)
 logger = logging.getLogger('HomilyMonitor')
 
+BATCH_FILE = CFG["paths"]["batch_file"]
+
 def is_dead_air(mp3_path, silence_thresh_dB=-40, min_silence_len=1000, silence_ratio_threshold=0.9):
     """Check if MP3 is mostly dead air (silent). Returns True if silent."""
     try:
