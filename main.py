@@ -3,6 +3,9 @@
 import argparse
 import time
 import os
+import logging
+from logging.handlers import RotatingFileHandler
+import sys
 
 from homily_monitor import (
     config_loader as cfg_mod,
@@ -13,31 +16,53 @@ from homily_monitor import (
     wordpress_utils  # Add this import
 )
 
+# Configure logging with UTF-8 encoding
+log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')  # Removed encoding
+log_file = os.path.join(os.path.dirname(__file__), 'homily_monitor.log')
+file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')  # UTF-8 here
+file_handler.setFormatter(log_formatter)
+logger = logging.getLogger('HomilyMonitor')
+logger.setLevel(logging.INFO)
+logger.addHandler(file_handler)
+console_handler = logging.StreamHandler(sys.stdout)  # Use stdout for better UTF-8 support
+console_handler.setFormatter(log_formatter)
+logger.addHandler(console_handler)
+
 CFG = cfg_mod.CFG
 _ = database.get_conn()  # Initialize DB early
 
 
 def main():
-    print("📡 Starting S3 monitoring...")
+    logger.info("📡 Starting S3 monitoring...")
     while True:
-        s3_files = s3_utils.list_s3_files()
+        try:
+            s3_files = s3_utils.list_s3_files()
 
-        for file in s3_files:
-            s3_key = file["Key"]
-            file_name = os.path.basename(s3_key)
-            local_path = os.path.join(CFG["paths"]["local_dir"], file_name)
+            for file in s3_files:
+                s3_key = file["Key"]
+                file_name = os.path.basename(s3_key)
+                local_path = os.path.join(CFG["paths"]["local_dir"], file_name)
 
-            if not s3_utils.is_file_within_last_48_hours(file["LastModified"]):
-                continue
-            if os.path.exists(local_path):
-                continue
+                if not s3_utils.is_file_within_last_48_hours(file["LastModified"]):
+                    logger.debug(f"Skipping {file_name}: Not within 48 hours or already downloaded.")
+                    continue
+                if os.path.exists(local_path):
+                    logger.debug(f"Skipping {file_name}: Already exists locally.")
+                    continue
 
-            s3_utils.download_file(s3_key, local_path)
-            audio_utils.run_batch_file(local_path)
-            helpers.check_transcript(local_path, file["LastModified"])
+                logger.info(f"Downloading {s3_key} to {local_path}...")
+                s3_utils.download_file(s3_key, local_path)
+                logger.info(f"Running batch file on {local_path}...")
+                audio_utils.run_batch_file(local_path)
+                logger.info(f"Checking transcript for {local_path}...")
+                helpers.check_transcript(local_path, file["LastModified"])
 
-        #helpers.check_for_completed_weekends()
-        time.sleep(60)
+            # Commenting out for now as per your code
+            # logger.info("Checking for completed weekends...")
+            # helpers.check_for_completed_weekends()
+            time.sleep(60)
+        except Exception as e:
+            logger.error(f"Error in main loop: {e}", exc_info=True)
 
 
 if __name__ == "__main__":
@@ -47,21 +72,26 @@ if __name__ == "__main__":
     group.add_argument("--latest", action="store_true", help="Run batch + GPT analysis on latest .mp3 file")
     group.add_argument("--analyze-latest", action="store_true", help="Analyze the latest transcript file")
     group.add_argument("--extract-latest-homily", action="store_true", help="Extract homily from latest .mp3 + VTT")
-    group.add_argument("--upload-latest-homily", action="store_true", help="Upload the latest extracted homily to WordPress as a draft")  # Add this
+    group.add_argument("--upload-latest-homily", action="store_true", help="Upload the latest extracted homily to WordPress as a draft")
     args = parser.parse_args()
 
     if args.test:
+        logger.info("Sending test email...")
         helpers.test_email()
     elif args.analyze_latest:
+        logger.info("Analyzing latest transcript...")
         helpers.analyze_latest_transcript()
     elif args.latest:
+        logger.info("Running batch + GPT analysis on latest MP3...")
         helpers.run_latest_test()
     elif args.extract_latest_homily:
+        logger.info("Extracting latest homily...")
         helpers.extract_latest_homily()
     elif args.upload_latest_homily:
-        wordpress_utils.upload_latest_homily()  # Add this handler
+        logger.info("Uploading latest homily to WordPress...")
+        wordpress_utils.upload_latest_homily()
     else:
         try:
             main()
         except KeyboardInterrupt:
-            print("🛑 Monitoring stopped by user.")
+            logger.info("🛑 Monitoring stopped by user.")

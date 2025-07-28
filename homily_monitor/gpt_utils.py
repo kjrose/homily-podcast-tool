@@ -5,11 +5,14 @@ import os
 from datetime import datetime, timedelta, timezone
 import openai
 from openai import OpenAI
+import logging
 
 from .config_loader import CFG
 from .email_utils import send_email_alert
 from .database import insert_homily  # Use insert_homily
 
+# Configure logging (reusing the logger from main.py)
+logger = logging.getLogger('HomilyMonitor')
 
 client = OpenAI(api_key=CFG["openai_api_key"])
 
@@ -52,18 +55,21 @@ Respond using this JSON format:
 """
    
     try:
+        logger.info(f"Analyzing transcript for {mp3_path} with GPT...")
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.5,
         )
         content = response.choices[0].message.content
-        # print(f"GPT response: {content}")
+        logger.debug(f"GPT response content: {content}")
         result = json.loads(content)  # Validate JSON
+        logger.info(f"✅ Successfully parsed GPT response for {mp3_path}")
    
         # Fallback for last_mod if not provided
         if last_mod is None:
             last_mod = datetime.fromtimestamp(os.path.getmtime(mp3_path), tz=timezone.utc)
+            logger.debug(f"Using file mtime {last_mod} as last_mod for {mp3_path}")
 
         date = last_mod.date()
         hour = last_mod.hour
@@ -79,16 +85,17 @@ Respond using this JSON format:
 
         group_key = sunday.strftime("%Y-%m-%d")
 
-        # Insert into DB (add new fields to table if needed; assume updated schema)
+        # Insert into DB
         date_str = date.strftime("%Y-%m-%d")
+        logger.info(f"Inserting analysis for {mp3_path} into database with group_key {group_key}")
         insert_homily(group_key, os.path.basename(mp3_path), date_str, result["title"], result["description"], result["special"], result["liturgical_day"], result["lit_year"])
-
+        logger.info(f"✅ Inserted analysis for {mp3_path} into database")
     except openai.OpenAIError as e:
-        print(f"❌ OpenAI API error: {e}")
+        logger.error(f"❌ OpenAI API error for {mp3_path}: {e}")
         send_email_alert(mp3_path, f"GPT analysis failed (API error):\n\n{e}")
     except json.JSONDecodeError as e:
-        print(f"❌ Invalid JSON from GPT response: {e}")
+        logger.error(f"❌ Invalid JSON from GPT for {mp3_path}: {e} - Content: {content}")
         send_email_alert(mp3_path, f"GPT response not valid JSON:\n\n{content}\nError: {e}")
     except Exception as e:
-        print(f"❌ Unexpected error in GPT analysis: {e}")
+        logger.error(f"❌ Unexpected error in GPT analysis for {mp3_path}: {e}")
         send_email_alert(mp3_path, f"GPT analysis failed:\n\n{e}")
