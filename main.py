@@ -36,7 +36,7 @@ def main():
             audio_utils.run_batch_file(local_path)
             helpers.check_transcript(local_path, file["LastModified"])
 
-        helpers.check_for_completed_weekends()
+        #helpers.check_for_completed_weekends()
         time.sleep(60)
 
 
