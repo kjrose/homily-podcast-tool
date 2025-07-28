@@ -7,7 +7,7 @@ import os
 # Configure logging (reusing the logger from main.py)
 logger = logging.getLogger('HomilyMonitor')
 
-def load_config(file_path="config.json"):
+def load_config(file_path="../config.json"):
     try:
         full_path = os.path.join(os.path.dirname(__file__), file_path)
         with open(full_path, encoding="utf-8") as f:
