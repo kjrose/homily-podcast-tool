@@ -4,6 +4,9 @@
 *.pyd
 __pycache__/
 *.so
+build/
+dist/
+*.spec
 
 # Config and sensitive files
 config.json
