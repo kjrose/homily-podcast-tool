@@ -108,9 +108,10 @@ def upload_to_wordpress(homily_path, original_mp3_path):
 
     # Construct full title and set publish date from filename
     original_filename = os.path.basename(original_mp3_path)  # e.g., "Mass-2025-07-20_18-00.mp3"
-    date_time_str = original_filename.split("-")[1].split(".")[0]  # e.g., "2025-07-20_18-00"
-    homily_datetime = datetime.strptime(date_time_str, "%Y-%m-%d_%H-%M")
-    publish_date_utc = homily_datetime.replace(tzinfo=pytz.UTC)  # Convert to UTC
+    date_time_parts = original_filename.split("Mass-")[1].split(".mp3")[0]  # e.g., "2025-07-20_18-00"
+    homily_datetime = datetime.strptime(date_time_parts, "%Y-%m-%d_%H-%M")
+    publish_date_utc = homily_datetime.replace(tzinfo=pytz.UTC)
+    publish_date_utc = publish_date_utc.isoformat()
 
     date_obj = datetime.strptime(date_str, "%Y-%m-%d")
     formatted_date = date_obj.strftime("%B %d, %Y")
@@ -165,7 +166,7 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         "title": full_title,
         "content": content,
         "status": "draft",
-        "date_gmt": publish_date_utc.isoformat(),  # Set publish date to homily time
+        "date_gmt": publish_date_utc,  # Set publish date to homily time
         "meta": {
             "audio_file": audio_url
         }

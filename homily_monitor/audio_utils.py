@@ -65,17 +65,31 @@ def is_dead_air(mp3_path, silence_thresh_dB=-40, min_silence_len=1000, silence_r
         logger.error(f"Audio analysis failed for {mp3_path}: {e}")
         return False
 
+# homily_monitor/audio_utils.py (updated run_batch_file)
+
 def run_batch_file(file_path, batch_file=BATCH_FILE):
     """Run the batch file on the given file path."""
     if is_dead_air(file_path):
         return  # Skip processing
     try:
         logger.info(f"Running batch file on {file_path}...")
-        subprocess.run(f'"{batch_file}" "{file_path}"', shell=True, check=True)
+        # Capture output to handle encoding
+        result = subprocess.run(
+            f'"{batch_file}" "{file_path}"',
+            shell=True,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding='utf-8'
+        )
+        logger.debug(f"Batch output: {result.stdout}")
+        if result.stderr:
+            logger.warning(f"Batch errors: {result.stderr}")
         logger.info("Batch file completed.")
     except subprocess.CalledProcessError as e:
-        logger.error(f"Batch file failed with return code {e.returncode} for {file_path}: {e}")
-        send_email_alert(file_path, f"Batch file execution failed:\n\n{e}")
+        logger.error(f"Batch file failed with return code {e.returncode} for {file_path}: {e.stderr}")
+        send_email_alert(file_path, f"Batch file execution failed:\n\n{e.stderr}")
     except FileNotFoundError:
         logger.error(f"Batch file {batch_file} not found for {file_path}")
         send_email_alert(file_path, "Batch file is missing.")

@@ -18,11 +18,15 @@ from homily_monitor import (
 
 # Configure logging with UTF-8 encoding
 log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-log_file = os.path.join(os.path.dirname(__file__), 'homily_monitor.log')
+if getattr(sys, 'frozen', False):  # PyInstaller check
+    base_dir = os.path.dirname(sys.executable)
+else:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+log_file = os.path.join(base_dir, 'homily_monitor.log')
 file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
 file_handler.setFormatter(log_formatter)
 logger = logging.getLogger('HomilyMonitor')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 logger.addHandler(file_handler)
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(log_formatter)
