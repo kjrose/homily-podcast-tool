@@ -26,7 +26,6 @@ log_file = os.path.join(base_dir, 'homily_monitor.log')
 file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
 file_handler.setFormatter(log_formatter)
 logger = logging.getLogger('HomilyMonitor')
-logger.setLevel(logging.DEBUG)
 logger.addHandler(file_handler)
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(log_formatter)
@@ -75,6 +74,7 @@ def main():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Mass Downloader and Transcript Checker")
+    parser.add_argument("--debug", action="store_true", help="Run in debug mode")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--test", action="store_true", help="Test")
     group.add_argument("--latest", action="store_true", help="Run batch + GPT analysis on latest .mp3 file")
@@ -82,6 +82,13 @@ if __name__ == "__main__":
     group.add_argument("--extract-latest-homily", action="store_true", help="Extract homily from latest .mp3 + VTT")
     group.add_argument("--upload-latest-homily", action="store_true", help="Upload the latest extracted homily to WordPress as a draft")
     args = parser.parse_args()
+
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+        logger.info("Running in debug mode...")
+        CFG["debug"] = True
+    else:
+        logger.setLevel(logging.INFO)
 
     if args.test:
         logger.info("Sending test email...")
