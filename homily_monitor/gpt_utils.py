@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 import openai
 from openai import OpenAI
 import logging
+import base64
+from io import BytesIO
 
 from .config_loader import CFG
 from .email_utils import send_email_alert
@@ -15,6 +17,11 @@ from .database import insert_homily  # Use insert_homily
 logger = logging.getLogger('HomilyMonitor')
 
 client = OpenAI(api_key=CFG["openai_api_key"])
+
+# Optional add-ons from config (default to empty strings if not present)
+TITLE_ADDON = CFG.get("gpt_title_addon", "")
+DESCRIPTION_ADDON = CFG.get("gpt_description_addon", "")
+IMAGE_ADDON = CFG.get("gpt_image_addon", "")
 
 
 def analyze_transcript_with_gpt(mp3_path, transcript_text, last_mod):
@@ -35,8 +42,8 @@ Read the following transcript of a Catholic homily and respond with the followin
 
 1. Liturgical day (e.g., "14th Sunday in Ordinary Time" or "Memorial of Saint Kateri Tekakwitha" – infer precisely from date and transcript)
 2. Liturgical year cycle (A, B, or C for Sundays; I or II for weekdays – infer from date and content)
-3. A podcast title for the homily (1 short phrase in Title Case)
-4. A description of the homily appropriate for a podcast (3-5 sentences)
+3. A podcast title for the homily (1 short phrase in Title Case){TITLE_ADDON}
+4. A description of the homily appropriate for a podcast (3-5 sentences){DESCRIPTION_ADDON}
 5. Any special context clues: was it a school Mass, baptism, funeral, etc.? (use "" if none)
 6. Respond ONLY with the raw JSON object, without any markdown, code blocks, wrappers, or additional text like ```json. Start directly with {{ and end with }}.
 
@@ -99,3 +106,62 @@ Respond using this JSON format:
     except Exception as e:
         logger.error(f"Unexpected error in GPT analysis for {mp3_path}: {e}")
         send_email_alert(mp3_path, f"GPT analysis failed:\n\n{e}")
+
+
+def generate_podcast_image(title, description):
+    """Generate a square image with DALL-E based on homily content, using GPT to craft a better prompt."""
+    # Step 1: Use GPT to create an optimized DALL-E prompt
+    prompt_craft = f"""
+You are a creative AI artist specializing in podcast cover art for Catholic homilies.
+
+Given the homily title: '{title}'
+And description: '{description[:300]}' (truncated if long)
+
+Craft a highly detailed, effective DALL-E prompt (50-100 words) for a 1024x1024 square image. Include:
+- Vivid, engaging visual themes inspired by the homily (e.g., religious symbols, serene landscapes).
+- Warm, inviting colors with high contrast for podcast thumbnails.
+- Overlay the title '{title}' in elegant, readable font.
+- Style: Realistic or illustrative, cinematic lighting, high detail.
+- Avoid boring/generic; make it dynamic and thematic.{IMAGE_ADDON}
+
+Respond ONLY with the raw DALL-E prompt string, no additional text.
+"""
+
+    try:
+        logger.info(f"Crafting DALL-E prompt for {title}...")
+        gpt_response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt_craft}],
+            temperature=0.7,
+        )
+        refined_prompt = gpt_response.choices[0].message.content.strip()
+        logger.debug(f"Refined DALL-E prompt: {refined_prompt}")
+    except Exception as e:
+        logger.error(f"Failed to craft prompt with GPT for {title}: {e}")
+        refined_prompt = f"A serene, inspirational square podcast cover for a Catholic homily titled '{title}'. Incorporate subtle religious symbols like a cross or Bible, with themes from: {description[:200]}. Use warm, inviting colors; overlay title in elegant font."  # Fallback
+    
+    try:
+        logger.info(f"Generating podcast image for {title}...")
+        response = client.responses.create(
+            model="gpt-4.1-mini",
+            input=refined_prompt,
+            tools=[{"type": "image_generation"}]
+        )
+        
+        image_data = [
+            output.result
+            for output in response.output
+            if output.type == "image_generation_call"
+        ]
+
+        if image_data:
+            image_base64 = image_data[0]
+            image_bytes = base64.b64decode(image_base64)
+            logger.debug(f"Generated image data for {title}")
+            return BytesIO(image_bytes)
+        else:
+            logger.warning(f"No image data available for {title}")
+            return None
+    except Exception as e:
+        logger.error(f"Failed to generate image for {title}: {e}")
+        return None

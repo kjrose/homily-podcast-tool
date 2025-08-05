@@ -18,26 +18,19 @@ from homily_monitor import (
 
 # Configure logging with UTF-8 encoding
 log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-if getattr(sys, 'frozen', False):  # PyInstaller check
-    base_dir = os.path.dirname(sys.executable)
-else:
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-log_file = os.path.join(base_dir, 'homily_monitor.log')
+log_file = os.path.join(os.path.dirname(__file__), 'homily_monitor.log')
 file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
 file_handler.setFormatter(log_formatter)
 logger = logging.getLogger('HomilyMonitor')
+logger.setLevel(logging.INFO)
 logger.addHandler(file_handler)
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(log_formatter)
 logger.addHandler(console_handler)
 
-try:
-    CFG = cfg_mod.CFG
-except Exception as e:
-    logger.critical(f"Initialization failed due to config error: {e}")
-    sys.exit(1)
+CFG = cfg_mod.CFG
+_ = database.get_conn()  # Initialize DB early
 
-_ = database.get_conn()
 
 def main():
     logger.info("Starting S3 monitoring...")
@@ -74,21 +67,15 @@ def main():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Mass Downloader and Transcript Checker")
-    parser.add_argument("--debug", action="store_true", help="Run in debug mode")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--test", action="store_true", help="Test")
     group.add_argument("--latest", action="store_true", help="Run batch + GPT analysis on latest .mp3 file")
     group.add_argument("--analyze-latest", action="store_true", help="Analyze the latest transcript file")
-    group.add_argument("--extract-latest-homily", action="store_true", help="Extract homily from latest .mp3 + VTT")
-    group.add_argument("--upload-latest-homily", action="store_true", help="Upload the latest extracted homily to WordPress as a draft")
+    group.add_argument("--extract-latest", action="store_true", help="Extract homily from latest .mp3 + VTT")
+    group.add_argument("--upload-latest", action="store_true", help="Upload the latest extracted homily to WordPress as a draft")
+    group.add_argument("--extract", type=str, help="Extract homily for specific Mass-YYYY-MM-DD_HH-MM.mp3 (e.g., --extract 2025-07-20_18-00)")
+    group.add_argument("--upload", type=str, help="Upload specific Homily-YYYY-MM-DD_HH-MM.mp3 to WordPress (e.g., --upload 2025-07-20_18-00)")
     args = parser.parse_args()
-
-    if args.debug:
-        logger.setLevel(logging.DEBUG)
-        logger.info("Running in debug mode...")
-        CFG["debug"] = True
-    else:
-        logger.setLevel(logging.INFO)
 
     if args.test:
         logger.info("Sending test email...")
@@ -99,12 +86,29 @@ if __name__ == "__main__":
     elif args.latest:
         logger.info("Running batch + GPT analysis on latest MP3...")
         helpers.run_latest_test()
-    elif args.extract_latest_homily:
+    elif args.extract_latest:
         logger.info("Extracting latest homily...")
         helpers.extract_latest_homily()
-    elif args.upload_latest_homily:
+    elif args.upload_latest:
         logger.info("Uploading latest homily to WordPress...")
         wordpress_utils.upload_latest_homily()
+    elif args.extract:
+        date_time_str = args.extract
+        mass_file = os.path.join(CFG["paths"]["local_dir"], f"Mass-{date_time_str}.mp3")
+        if not os.path.exists(mass_file):
+            logger.error(f"Mass file not found: {mass_file}")
+            sys.exit(1)
+        logger.info(f"Extracting homily for {mass_file}...")
+        audio_utils.extract_homily_from_vtt(mass_file)
+    elif args.upload:
+        date_time_str = args.upload
+        homily_file = os.path.join(CFG["paths"]["local_dir"], f"Homily-{date_time_str}.mp3")
+        mass_file = os.path.join(CFG["paths"]["local_dir"], f"Mass-{date_time_str}.mp3")
+        if not os.path.exists(homily_file) or not os.path.exists(mass_file):
+            logger.error(f"Homily or Mass file not found: {homily_file} or {mass_file}")
+            sys.exit(1)
+        logger.info(f"Uploading homily for {homily_file}...")
+        wordpress_utils.upload_to_wordpress(homily_file, mass_file)
     else:
         try:
             main()

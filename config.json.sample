@@ -1,4 +1,3 @@
-
 {
   "openai_api_key": "your_openai_api_key_here",
 
@@ -30,5 +29,11 @@
     "url": "https://yourwordpresssite.com",
     "user": "your_wp_username",
     "app_password": "your_wp_application_password"
-  }
+  },
+
+  "gpt_title_addon": "Ensure the title is inspirational and captures the essence of the Gospel message.",
+  
+  "gpt_description_addon": "Phrase the description in a welcoming, faith-building style that encourages listeners to reflect on their spiritual life.",
+  
+  "gpt_image_addon": "Render the image in a stained glass style with vibrant colors and Catholic iconography."
 }

@@ -13,7 +13,8 @@ from .config_loader import CFG
 from .email_utils import send_email_alert, send_success_email
 from .database import get_conn  # Updated to use get_conn
 from .helpers import validate_and_get_transcript
-from .gpt_utils import analyze_transcript_with_gpt, client
+from .gpt_utils import analyze_transcript_with_gpt, generate_podcast_image
+
 
 # Configure logging (reusing the logger from main.py)
 logger = logging.getLogger('HomilyMonitor')
@@ -22,64 +23,6 @@ WP_URL = CFG["wordpress"]["url"]  # e.g., https://example.com
 WP_USER = CFG["wordpress"]["user"]
 WP_APP_PASS = CFG["wordpress"]["app_password"]
 LOCAL_DIR = CFG["paths"]["local_dir"]
-
-def generate_podcast_image(title, description):
-    """Generate a square image with DALL-E based on homily content, using GPT to craft a better prompt."""
-    # Step 1: Use GPT to create an optimized DALL-E prompt
-    prompt_craft = f"""
-You are a creative AI artist specializing in podcast cover art for Catholic homilies.
-
-Given the homily title: '{title}'
-And description: '{description[:300]}' (truncated if long)
-
-Craft a highly detailed, effective DALL-E prompt (50-100 words) for a 1024x1024 square image. Include:
-- Vivid, engaging visual themes inspired by the homily (e.g., religious symbols, serene landscapes).
-- Warm, inviting colors with high contrast for podcast thumbnails.
-- Overlay the title '{title}' in elegant, readable font.
-- Style: Realistic or illustrative, cinematic lighting, high detail.
-- Avoid boring/generic; make it dynamic and thematic.
-
-Respond ONLY with the raw DALL-E prompt string, no additional text.
-"""
-
-    try:
-        logger.info(f"Crafting DALL-E prompt for {title}...")
-        gpt_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt_craft}],
-            temperature=0.7,
-        )
-        refined_prompt = gpt_response.choices[0].message.content.strip()
-        logger.debug(f"Refined DALL-E prompt: {refined_prompt}")
-    except Exception as e:
-        logger.error(f"Failed to craft prompt with GPT for {title}: {e}")
-        refined_prompt = f"A serene, inspirational square podcast cover for a Catholic homily titled '{title}'. Incorporate subtle religious symbols like a cross or Bible, with themes from: {description[:200]}. Use warm, inviting colors; overlay title in elegant font."  # Fallback
-    
-    try:
-        logger.info(f"Generating podcast image for {title}...")
-        response = client.responses.create(
-            model="gpt-4.1-mini",
-            input=refined_prompt,
-            tools=[{"type": "image_generation"}]
-        )
-        
-        image_data = [
-            output.result
-            for output in response.output
-            if output.type == "image_generation_call"
-        ]
-
-        if image_data:
-            image_base64 = image_data[0]
-            image_bytes = base64.b64decode(image_base64)
-            logger.debug(f"Generated image data for {title}")
-            return BytesIO(image_bytes)
-        else:
-            logger.warning(f"No image data available for {title}")
-            return None
-    except Exception as e:
-        logger.error(f"Failed to generate image for {title}: {e}")
-        return None
 
 def upload_to_wordpress(homily_path, original_mp3_path):
     conn = get_conn()
@@ -110,8 +53,7 @@ def upload_to_wordpress(homily_path, original_mp3_path):
     original_filename = os.path.basename(original_mp3_path)  # e.g., "Mass-2025-07-20_18-00.mp3"
     date_time_parts = original_filename.split("Mass-")[1].split(".mp3")[0]  # e.g., "2025-07-20_18-00"
     homily_datetime = datetime.strptime(date_time_parts, "%Y-%m-%d_%H-%M")
-    publish_date_utc = homily_datetime.replace(tzinfo=pytz.UTC)
-    publish_date_utc = publish_date_utc.isoformat()
+    publish_date_utc = homily_datetime.replace(tzinfo=pytz.UTC).isoformat()  # Convert to UTC ISO format for WP API
 
     date_obj = datetime.strptime(date_str, "%Y-%m-%d")
     formatted_date = date_obj.strftime("%B %d, %Y")
@@ -166,7 +108,7 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         "title": full_title,
         "content": content,
         "status": "draft",
-        "date_gmt": publish_date_utc,  # Set publish date to homily time
+        "date_gmt": publish_date_utc,  # Set publish date to homily time in UTC
         "meta": {
             "audio_file": audio_url
         }
