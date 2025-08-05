@@ -6,7 +6,7 @@
 
 An efficient, automated tool for processing and sharing Catholic homilies. It downloads recordings from S3, extracts homily segments, summarizes with AI, detects content variations, and uploads drafts to WordPress podcasts. Built for reliability and ease of use.
 
-## 🌟 Features
+## Features
 
 - **S3 Monitoring**: Automatically fetches recent Mass MP3s from S3 storage.
 - **Audio Processing**: Transcribes and extracts homily sections using FFmpeg and VTT analysis.
@@ -17,7 +17,7 @@ An efficient, automated tool for processing and sharing Catholic homilies. It do
 - **Email Notifications**: Alerts for errors or deviations.
 - **Modular Design**: Structured for easy maintenance and future enhancements.
 
-## 🚀 Installation
+## Installation
 
 1. **Clone the Repository**:
 ````bash
@@ -38,9 +38,9 @@ pip install -r requirements.txt
 4. **Configure**:
 Copy `config.json.sample` to `config.json` and fill in your details (API keys, paths, etc.).
 
-5. **FFmpeg**: Ensure FFmpeg is installed and in your PATH.
+5. **FFmpeg**: Ensure FFmpeg is installed and in your PATH. Download from [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html) or use Winget: `winget install Gyan.FFmpeg`.
 
-## 📖 Usage
+## Usage
 
 Run the main script:
 ````bash
@@ -51,7 +51,10 @@ python main.py
 - `--test`: Send a test email alert.
 - `--latest`: Process the latest MP3 (batch + GPT analysis).
 - `--analyze-latest`: Analyze the latest transcript.
-- `--extract-latest-homily`: Extract homily from the latest MP3 + VTT.
+- `--extract-latest`: Extract homily from the latest MP3 + VTT.
+- `--upload-latest`: Upload the latest extracted homily to WordPress as a draft.
+- `--extract`: Extract homily for specific Mass-YYYY-MM-DD_HH-MM.mp3 (e.g., --extract 2025-07-20_18-00).
+- `--upload`: Upload specific Homily-YYYY-MM-DD_HH-MM.mp3 to WordPress (e.g., --upload 2025-07-20_18-00).
 
 The script runs in monitoring mode by default, polling S3 every 60 seconds.
 
@@ -86,7 +89,10 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds.
     "url": "https://your-site.com",
     "user": "wp-user",
     "app_password": "..."
-  }
+  },
+  "gpt_title_addon": "Ensure the title is inspirational and captures the essence of the Gospel message.",
+  "gpt_description_addon": "Phrase the description in a welcoming, faith-building style that encourages listeners to reflect on their spiritual life.",
+  "gpt_image_addon": "Render the image in a stained glass style with vibrant colors and Catholic iconography."
 }
 ```
 
@@ -107,8 +113,61 @@ homily-podcast-tool/
 ├── LICENSE
 ├── main.py  # Entry point
 ├── README.md
-└── requirements.txt
+├── requirements.txt
+├── TranscribeHomilies.bat
+└── TranscribeWildcard.bat
 ````
+
+## Running as a Windows Service
+To run the tool constantly as a background service on Windows, use WinSW (Windows Service Wrapper) from https://github.com/winsw/winsw. WinSW allows wrapping your Python script in an EXE or running it directly as a service.
+Setup Steps
+
+1. Build the One-File EXE:
+ * Run PyInstaller in your project directory to create the executable:
+````text
+pyinstaller.exe --onefile --name homilymonitor main.py
+````
+ * This generates homilymonitor.exe in the dist folder. Copy config.json to the dist directory alongside the EXE.
+2. Download WinSW: Download the latest WinSW.exe from the releases page (e.g., WinSW-x64.exe) and rename it to something like homilymonitor_service.exe in your project directory.
+3. Create XML Configuration: Create a file named homilymonitor_service.xml in the same directory as the EXE, with the following content (adjust paths as needed):
+
+````xml
+<service>
+  <id>HomilyMonitor</id>
+  <name>Homily Monitor Service</name>
+  <description>Monitors and processes Mass recordings for homily podcasting.</description>
+  <executable>%BASE%\homilymonitor.exe</executable>
+  <workingdirectory>%BASE%</workingdirectory>
+  <logmode>rotate</logmode>
+  <logpath>%BASE%\logs</logpath>
+  <onfailure action="restart" delay="10 sec"/>
+</service>
+````
+
+4. Install the Service:
+ * Open Command Prompt as Administrator.
+ * Run:
+````text
+homilymonitor_service.exe install
+````
+
+5. Run the Service:
+ * Run:
+````text
+homilymonitor_service.exe start
+````
+ * Check status with homilymonitor_service.exe status or in the Services management console (services.msc).
+
+6. Uninstall (if needed):
+ * Run:
+````text
+homilymonitor_service.exe uninstall
+````
+
+This setup ensures your homily monitoring tool runs continuously in the background, automatically processing new recordings as they are uploaded to S3.
+
+## Batch Files for Transcription
+The tool uses batch files for transcribing MP3 files with Whisper. Place these in the project directory alongside main.py.
 
 ## 🤝 Contributing
 1. Fork the repository.
