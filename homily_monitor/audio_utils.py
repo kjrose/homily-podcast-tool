@@ -137,6 +137,9 @@ def run_batch_file(file_path, batch_file=BATCH_FILE):
 
     try:
         logger.info(f"Running batch file on {file_path}...")
+        # Set env for UTF-8 to avoid encoding issues in child Python processes
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
         # Capture output with UTF-8 encoding
         result = subprocess.run(
             f'"{batch_file}" "{file_path}"',
@@ -145,7 +148,8 @@ def run_batch_file(file_path, batch_file=BATCH_FILE):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            encoding='utf-8'
+            encoding='utf-8',
+            env=env  # Pass the modified env
         )
         logger.debug(f"Batch output: {result.stdout}")
         if result.stderr:
