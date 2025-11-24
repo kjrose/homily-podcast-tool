@@ -37,7 +37,7 @@ def main():
     while True:
         try:
             s3_files = s3_utils.list_s3_files()
-
+            
             for file in s3_files:
                 s3_key = file["Key"]
                 file_name = os.path.basename(s3_key)

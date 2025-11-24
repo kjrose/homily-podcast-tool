@@ -120,6 +120,95 @@ def is_dead_air(mp3_path, silence_thresh_dB=-40, min_silence_len=1000, silence_r
         logger.error(f"Error: Audio analysis failed for {mp3_path}: {e}")
         return False
 
+def trim_excess_silence(mp3_path, max_silence_sec=1.0, silence_thresh_dB=-40):
+    """Trim excess silence from start and end, leaving at most max_silence_sec of dead air."""
+    try:
+        logger.info(f"Trimming excess silence for {mp3_path} (max {max_silence_sec}s, thresh {silence_thresh_dB}dB)...")
+        
+        # Run silencedetect with minimum silence duration = max_silence_sec
+        min_silence = max_silence_sec
+        cmd = [
+            "ffmpeg",
+            "-i", mp3_path,
+            "-af", f"silencedetect=n={silence_thresh_dB}dB:d={min_silence}",
+            "-f", "null",
+            "-y", "NUL"
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding='utf-8')
+        output = result.stderr
+        
+        # Parse total duration
+        duration_line = next((line for line in output.splitlines() if "Duration:" in line), None)
+        if duration_line:
+            duration_str = duration_line.split("Duration: ")[1].split(",")[0]
+            h, m, s = map(float, duration_str.split(":"))
+            total_duration = h * 3600 + m * 60 + s
+        else:
+            raise ValueError(f"Could not parse duration for {mp3_path}")
+        
+        # Parse silences
+        silences = []
+        current_start = None
+        for line in output.splitlines():
+            if "silence_start:" in line:
+                start = float(line.split("silence_start: ")[1].strip())
+                current_start = start
+            if "silence_end:" in line:
+                end_str = line.split("silence_end: ")[1].split(" |")[0]
+                end = float(end_str)
+                dur = float(line.split("silence_duration: ")[1])
+                silences.append((current_start, end, dur))
+                current_start = None
+        
+        # Handle if ends with silence
+        if current_start is not None:
+            end = total_duration
+            dur = end - current_start
+            silences.append((current_start, end, dur))
+        
+        trim_start_amount = 0.0
+        trim_end_amount = 0.0
+        
+        # Leading silence
+        if silences and abs(silences[0][0]) < 0.001:  # Starts at ~0
+            leading_dur = silences[0][2]
+            trim_start_amount = leading_dur - max_silence_sec
+        
+        # Trailing silence
+        if silences and abs(silences[-1][1] - total_duration) < 0.001:  # Ends at total_duration
+            trailing_dur = silences[-1][2]
+            trim_end_amount = trailing_dur - max_silence_sec
+        
+        new_start = trim_start_amount
+        new_duration = total_duration - trim_start_amount - trim_end_amount
+        
+        if new_duration <= 0:
+            logger.warning(f"Trim would empty the file {mp3_path}, skipping trim")
+            return
+        
+        # Trim with FFmpeg
+        trimmed_path = os.path.splitext(mp3_path)[0] + "_trimmed.mp3"
+        trim_cmd = [
+            "ffmpeg",
+            "-y",
+            "-i", mp3_path,
+            "-ss", str(new_start),
+            "-t", str(new_duration),
+            "-c", "copy",
+            trimmed_path
+        ]
+        subprocess.run(trim_cmd, check=True, encoding='utf-8')
+        
+        # Replace original
+        os.replace(trimmed_path, mp3_path)
+        logger.info(f"Success: Trimmed {mp3_path} (start trim: {trim_start_amount}s, end trim: {trim_end_amount}s)")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Error: Silence trim failed for {mp3_path}: {e.stderr}")
+        send_email_alert(mp3_path, f"Silence trim failed:\n\n{e.stderr}")
+    except Exception as e:
+        logger.error(f"Error: Unexpected error trimming silence for {mp3_path}: {e}")
+        send_email_alert(mp3_path, f"Unexpected silence trim error:\n\n{e}")
+
 def run_batch_file(file_path, batch_file=BATCH_FILE):
     """Run the batch file on the given file path, after normalizing audio."""
     # Normalize audio first
@@ -141,6 +230,7 @@ def run_batch_file(file_path, batch_file=BATCH_FILE):
         env = os.environ.copy()
         env['PYTHONIOENCODING'] = 'utf-8'
         # Capture output with UTF-8 encoding
+        logger.info(f"Executing exact command: \"{batch_file}\" \"{file_path}\"")
         result = subprocess.run(
             f'"{batch_file}" "{file_path}"',
             shell=True,
@@ -391,6 +481,9 @@ VTT:
     try:
         subprocess.run(ffmpeg_cmd, check=True)
         logger.info(f"Success: Homily saved as: {output_path}")
+        
+        # Trim excess silence
+        trim_excess_silence(output_path)
         
         # Import here to avoid circular import
         from .wordpress_utils import upload_to_wordpress

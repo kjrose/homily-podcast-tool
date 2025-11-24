@@ -11,6 +11,8 @@ from .email_utils import send_email_alert
 
 # Configure logging (reusing the logger from main.py)
 logger = logging.getLogger('HomilyMonitor')
+#logging.getLogger("botocore").setLevel(logging.DEBUG)   # very verbose
+#logging.getLogger("boto3").setLevel(logging.DEBUG)
 
 S3_ENDPOINT = CFG["s3"]["endpoint"]
 S3_BUCKET = CFG["s3"]["bucket"]
@@ -19,14 +21,25 @@ ACCESS_KEY = CFG["s3"]["access_key"]
 SECRET_KEY = CFG["s3"]["secret_key"]
 
 # --- S3 CLIENT INIT ---
+from botocore.config import Config as BotoConfig
+
+s3_config = BotoConfig(
+    region_name="us-east-1",
+    signature_version="s3v4",
+    s3={
+        "addressing_style": "path",
+        "payload_signing_enabled": False,  # << use UNSIGNED-PAYLOAD
+    },
+    retries={"max_attempts": 5, "mode": "standard"},
+)
+
 s3_client = boto3.client(
     "s3",
     endpoint_url=S3_ENDPOINT,
     aws_access_key_id=ACCESS_KEY,
     aws_secret_access_key=SECRET_KEY,
-    config=Config(s3={"addressing_style": "path"}),
+    config=s3_config,
 )
-
 
 def list_s3_files():
     files = []
@@ -38,6 +51,7 @@ def list_s3_files():
                 kwargs["ContinuationToken"] = continuation_token
             logger.debug(f"Listing S3 objects in {S3_BUCKET} with prefix {S3_FOLDER}...")
             response = s3_client.list_objects_v2(**kwargs)
+            logger.debug("S3 list_objects_v2 response received.")
             if "Contents" in response:
                 for obj in response["Contents"]:
                     key = obj["Key"]

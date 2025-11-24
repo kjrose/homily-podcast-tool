@@ -125,7 +125,7 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         send_email_alert(homily_path, f"Podcast post creation failed: {response.text}")
         return
 
-    send_success_email("Homily Upload Successful", f"Successfully uploaded homily to WordPress as a draft: {full_title} \n\nView draft: {response.json()['link']} \n\nAudio URL: {audio_url} \n\nImage URL: {cover_image_url}")
+    send_success_email("Homily Upload Successful", f"Successfully uploaded homily to WordPress as a draft: {full_title} \n\nView draft: {response.json()['link']} \n\nAudio URL: {audio_url} \n\nImage URL: {cover_image_url} \n\n Description: {description} \n\n Publish Post: {WP_URL}/wp-admin/post.php?post={response.json()['id']}&action=edit")
     logger.info(f"Uploaded homily as draft to WordPress: {response.json()['link']}")
 
 

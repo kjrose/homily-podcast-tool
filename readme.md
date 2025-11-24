@@ -125,7 +125,7 @@ Setup Steps
 1. Build the One-File EXE:
  * Run PyInstaller in your project directory to create the executable:
 ````text
-pyinstaller.exe --onefile --name homilymonitor main.py
+pyinstaller --onedir --name homilymonitor --hidden-import boto3 --hidden-import botocore --hidden-import botocore.session --hidden-import requests --hidden-import openai --hidden-import openai.OpenAI --hidden-import sqlite3 --hidden-import pydub .\main.py
 ````
  * This generates homilymonitor.exe in the dist folder. Copy config.json to the dist directory alongside the EXE.
 2. Download WinSW: Download the latest WinSW.exe from the releases page (e.g., WinSW-x64.exe) and rename it to something like homilymonitor_service.exe in your project directory.
