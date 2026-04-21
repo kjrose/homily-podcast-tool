@@ -1,6 +1,17 @@
 {
   "openai_api_key": "your_openai_api_key_here",
 
+  "ai": {
+    "text_model": "gpt-5.4",
+    "analysis_model": "gpt-5.4",
+    "image_prompt_model": "gpt-5.4",
+    "vtt_fallback_model": "gpt-5.4",
+    "deviation_model": "gpt-5.4",
+    "image_model": "gpt-image-1.5",
+    "image_size": "1024x1024",
+    "image_quality": "auto"
+  },
+
   "s3": {
     "endpoint": "your_s3_endpoint_url",
     "bucket": "your_s3_bucket_name",

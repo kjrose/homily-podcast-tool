@@ -10,7 +10,7 @@ from homily_monitor.config_loader import CFG
 from .email_utils import send_email_alert
 from .gpt_utils import analyze_transcript_with_gpt
 from .audio_utils import extract_homily_from_vtt, run_batch_file 
-from .gpt_utils import client
+from .gpt_utils import DEVIATION_MODEL, request_text_completion
 from .database import get_conn
 
 # Configure logging (reusing the logger from main.py)
@@ -194,12 +194,11 @@ Respond in JSON.
 """
 
                         logger.info(f"Analyzing deviations for group_key {gk}...")
-                        compare_response = client.chat.completions.create(
-                            model="gpt-4-turbo",
-                            messages=[{"role": "user", "content": compare_prompt}],
+                        compare_content = request_text_completion(
+                            compare_prompt,
                             temperature=0.1,
+                            model=DEVIATION_MODEL,
                         )
-                        compare_content = compare_response.choices[0].message.content
                         compare_result = json.loads(compare_content)
 
                         if compare_result["status"] == "deviations":

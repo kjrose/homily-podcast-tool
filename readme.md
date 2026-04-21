@@ -10,7 +10,8 @@ An efficient, automated tool for processing and sharing Catholic homilies. It do
 
 - **S3 Monitoring**: Automatically fetches recent Mass MP3s from S3 storage.
 - **Audio Processing**: Transcribes and extracts homily sections using FFmpeg and VTT analysis.
-- **AI Summarization**: Generates titles, descriptions, and context notes with OpenAI GPT.
+- **AI Summarization**: Generates titles, descriptions, and context notes with OpenAI GPT-5.4.
+- **AI Cover Art**: Generates podcast cover images with GPT Image 1.5.
 - **Deviation Detection**: Compares weekend homilies and notifies of significant differences.
 - **WordPress Integration**: Uploads homily drafts as podcasts via Seriously Simple Podcasting.
 - **Database Management**: SQLite for tracking analyses and comparison states.
@@ -64,6 +65,16 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds.
 ```json
 {
   "openai_api_key": "sk-...",
+  "ai": {
+    "text_model": "gpt-5.4",
+    "analysis_model": "gpt-5.4",
+    "image_prompt_model": "gpt-5.4",
+    "vtt_fallback_model": "gpt-5.4",
+    "deviation_model": "gpt-5.4",
+    "image_model": "gpt-image-1.5",
+    "image_size": "1024x1024",
+    "image_quality": "auto"
+  },
   "s3": {
     "endpoint": "https://s3.example.com",
     "bucket": "your-bucket",

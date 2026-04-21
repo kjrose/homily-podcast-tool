@@ -9,7 +9,7 @@ import logging
 
 from .config_loader import CFG
 from .email_utils import send_email_alert
-from .gpt_utils import client
+from .gpt_utils import VTT_FALLBACK_MODEL, request_text_completion
 from pydub import AudioSegment
 
 # Configure ffmpeg path explicitly
@@ -408,15 +408,14 @@ Return ONLY a JSON object with a single field "start_timestamp" containing the s
 
 VTT:
 {full_vtt}
-"""
+        """
 
         try:
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": gpt_prompt}],
+            content = request_text_completion(
+                gpt_prompt,
                 temperature=0.2,
+                model=VTT_FALLBACK_MODEL,
             )
-            content = response.choices[0].message.content.strip()
             # Remove any potential markdown wrappers
             content = content.replace("```json", "").replace("```", "").strip()
             result = json.loads(content)  # Expects {"start_timestamp": "08:07.140"}

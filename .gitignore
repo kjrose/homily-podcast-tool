@@ -46,3 +46,7 @@ env/
 *.tmp
 
 homilymonitorservice/
+
+deploy-logs/
+deploy-backups/
+.deploy-builds/

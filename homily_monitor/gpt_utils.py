@@ -18,10 +18,29 @@ logger = logging.getLogger('HomilyMonitor')
 
 client = OpenAI(api_key=CFG["openai_api_key"])
 
+AI_CFG = CFG.get("ai", {})
+TEXT_MODEL = AI_CFG.get("text_model", "gpt-5.4")
+TRANSCRIPT_ANALYSIS_MODEL = AI_CFG.get("analysis_model", TEXT_MODEL)
+IMAGE_PROMPT_MODEL = AI_CFG.get("image_prompt_model", TEXT_MODEL)
+VTT_FALLBACK_MODEL = AI_CFG.get("vtt_fallback_model", TEXT_MODEL)
+DEVIATION_MODEL = AI_CFG.get("deviation_model", TEXT_MODEL)
+IMAGE_MODEL = AI_CFG.get("image_model", "gpt-image-1.5")
+IMAGE_SIZE = AI_CFG.get("image_size", "1024x1024")
+IMAGE_QUALITY = AI_CFG.get("image_quality", "auto")
+
 # Optional add-ons from config (default to empty strings if not present)
 TITLE_ADDON = CFG.get("gpt_title_addon", "")
 DESCRIPTION_ADDON = CFG.get("gpt_description_addon", "")
 IMAGE_ADDON = CFG.get("gpt_image_addon", "")
+
+
+def request_text_completion(prompt, temperature=0.5, model=None):
+    response = client.chat.completions.create(
+        model=model or TEXT_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=temperature,
+    )
+    return (response.choices[0].message.content or "").strip()
 
 
 def analyze_transcript_with_gpt(mp3_path, transcript_text, last_mod):
@@ -63,12 +82,11 @@ Respond using this JSON format:
    
     try:
         logger.info(f"Analyzing transcript for {mp3_path} with GPT...")
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
+        content = request_text_completion(
+            prompt,
             temperature=0.5,
+            model=TRANSCRIPT_ANALYSIS_MODEL,
         )
-        content = response.choices[0].message.content
         logger.debug(f"GPT response content: {content}")
         result = json.loads(content)  # Validate JSON
         logger.info(f"Successfully parsed GPT response for {mp3_path}")
@@ -109,59 +127,55 @@ Respond using this JSON format:
 
 
 def generate_podcast_image(title, description):
-    """Generate a square image with DALL-E based on homily content, using GPT to craft a better prompt."""
-    # Step 1: Use GPT to create an optimized DALL-E prompt
+    """Generate a square podcast image using GPT Image with a GPT-crafted prompt."""
+    # Step 1: Use GPT to create an optimized GPT Image prompt
     prompt_craft = f"""
 You are a creative AI artist specializing in podcast cover art for Catholic homilies.
 
 Given the homily title: '{title}'
 And description: '{description[:300]}' (truncated if long)
 
-Craft a highly detailed, effective DALL-E prompt (50-100 words) for a 1024x1024 square image. Include:
+Craft a highly detailed, effective GPT Image prompt (50-100 words) for a 1024x1024 square image. Include:
 - Vivid, engaging visual themes inspired by the homily (e.g., religious symbols, serene landscapes).
 - Warm, inviting colors with high contrast for podcast thumbnails.
 - Overlay the title '{title}' in elegant, readable font.
 - Style: Realistic or illustrative, cinematic lighting, high detail.
 - Avoid boring/generic; make it dynamic and thematic.{IMAGE_ADDON}
 
-Respond ONLY with the raw DALL-E prompt string, no additional text.
+Respond ONLY with the raw image prompt string, no additional text.
 """
 
     try:
-        logger.info(f"Crafting DALL-E prompt for {title}...")
-        gpt_response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt_craft}],
+        logger.info(f"Crafting GPT Image prompt for {title}...")
+        refined_prompt = request_text_completion(
+            prompt_craft,
             temperature=0.7,
+            model=IMAGE_PROMPT_MODEL,
         )
-        refined_prompt = gpt_response.choices[0].message.content.strip()
-        logger.debug(f"Refined DALL-E prompt: {refined_prompt}")
+        logger.debug(f"Refined GPT Image prompt: {refined_prompt}")
     except Exception as e:
         logger.error(f"Failed to craft prompt with GPT for {title}: {e}")
         refined_prompt = f"A serene, inspirational square podcast cover for a Catholic homily titled '{title}'. Incorporate subtle religious symbols like a cross or Bible, with themes from: {description[:200]}. Use warm, inviting colors; overlay title in elegant font."  # Fallback
     
     try:
         logger.info(f"Generating podcast image for {title}...")
-        response = client.responses.create(
-            model="gpt-4.1-mini",
-            input=refined_prompt,
-            tools=[{"type": "image_generation"}]
+        response = client.images.generate(
+            model=IMAGE_MODEL,
+            prompt=refined_prompt,
+            size=IMAGE_SIZE,
+            quality=IMAGE_QUALITY,
         )
-        
-        image_data = [
-            output.result
-            for output in response.output
-            if output.type == "image_generation_call"
-        ]
 
-        if image_data:
-            image_base64 = image_data[0]
+        if response.data:
+            image_base64 = response.data[0].b64_json
+            if not image_base64:
+                logger.warning(f"No image data available for {title}")
+                return None
             image_bytes = base64.b64decode(image_base64)
             logger.debug(f"Generated image data for {title}")
             return BytesIO(image_bytes)
-        else:
-            logger.warning(f"No image data available for {title}")
-            return None
+        logger.warning(f"No image data available for {title}")
+        return None
     except Exception as e:
         logger.error(f"Failed to generate image for {title}: {e}")
         return None
