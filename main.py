@@ -4,8 +4,8 @@ import argparse
 import time
 import os
 import logging
-from logging.handlers import RotatingFileHandler
 import sys
+from datetime import datetime, timezone
 
 from homily_monitor import (
     config_loader as cfg_mod,
@@ -13,20 +13,11 @@ from homily_monitor import (
     s3_utils,
     audio_utils,
     helpers,
-    wordpress_utils  # Add this import
+    wordpress_utils,  # Add this import
+    log_utils,
 )
 
-# Configure logging with UTF-8 encoding
-log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-log_file = os.path.join(os.path.dirname(__file__), 'homily_monitor.log')
-file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
-file_handler.setFormatter(log_formatter)
-logger = logging.getLogger('HomilyMonitor')
-logger.setLevel(logging.INFO)
-logger.addHandler(file_handler)
-console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setFormatter(log_formatter)
-logger.addHandler(console_handler)
+logger = log_utils.configure_logging()
 
 CFG = cfg_mod.CFG
 _ = database.get_conn()  # Initialize DB early
@@ -34,8 +25,13 @@ _ = database.get_conn()  # Initialize DB early
 
 def main():
     logger.info("Starting S3 monitoring...")
+    next_log_cleanup = datetime.now(timezone.utc)
     while True:
         try:
+            if datetime.now(timezone.utc) >= next_log_cleanup:
+                log_utils.cleanup_logs(logger)
+                next_log_cleanup = datetime.now(timezone.utc) + log_utils.get_cleanup_interval()
+
             s3_files = s3_utils.list_s3_files()
             
             for file in s3_files:
@@ -66,6 +62,7 @@ def main():
 
 
 if __name__ == "__main__":
+    log_utils.cleanup_logs(logger)
     parser = argparse.ArgumentParser(description="Mass Downloader and Transcript Checker")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--test", action="store_true", help="Test")

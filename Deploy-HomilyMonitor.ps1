@@ -441,6 +441,14 @@ if (-not (Test-Path -LiteralPath $DeploymentDir)) {
     throw "Deployment directory not found: $DeploymentDir"
 }
 
+$serviceLogDir = Join-Path $DeploymentDir 'logs'
+if (-not (Test-Path -LiteralPath $serviceLogDir)) {
+    if ($PSCmdlet.ShouldProcess($serviceLogDir, "Create service log directory")) {
+        New-Item -ItemType Directory -Path $serviceLogDir -Force | Out-Null
+        Write-Step "Ensured service log directory exists: $serviceLogDir"
+    }
+}
+
 if (-not $SkipBuild) {
     if ($PSCmdlet.ShouldProcess($SpecPath, "Build PyInstaller package")) {
         Write-Step "Building with PyInstaller..."

@@ -11,7 +11,8 @@ An efficient, automated tool for processing and sharing Catholic homilies. It do
 - **S3 Monitoring**: Automatically fetches recent Mass MP3s from S3 storage.
 - **Audio Processing**: Transcribes and extracts homily sections using FFmpeg and VTT analysis.
 - **AI Summarization**: Generates titles, descriptions, and context notes with OpenAI GPT-5.4.
-- **AI Cover Art**: Generates podcast cover images with GPT Image 1.5.
+- **AI Cover Art**: Generates text-free podcast cover images with GPT Image 1.5, tuned for stronger homily alignment and higher visual quality.
+- **Log Retention**: Keeps 7 days of raw logs, compresses the next 21 days, and removes anything older.
 - **Deviation Detection**: Compares weekend homilies and notifies of significant differences.
 - **WordPress Integration**: Uploads homily drafts as podcasts via Seriously Simple Podcasting.
 - **Database Management**: SQLite for tracking analyses and comparison states.
@@ -73,7 +74,13 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds.
     "deviation_model": "gpt-5.4",
     "image_model": "gpt-image-1.5",
     "image_size": "1024x1024",
-    "image_quality": "auto"
+    "image_quality": "high"
+  },
+  "logging": {
+    "log_dir": "logs",
+    "hot_retention_days": 7,
+    "archive_retention_days": 28,
+    "cleanup_interval_hours": 6
   },
   "s3": {
     "endpoint": "https://s3.example.com",
@@ -103,7 +110,7 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds.
   },
   "gpt_title_addon": "Ensure the title is inspirational and captures the essence of the Gospel message.",
   "gpt_description_addon": "Phrase the description in a welcoming, faith-building style that encourages listeners to reflect on their spiritual life.",
-  "gpt_image_addon": "Render the image in a stained glass style with vibrant colors and Catholic iconography."
+  "gpt_image_addon": "Prefer scene-driven sacred imagery that closely matches the homily, with strong composition and no visible words or lettering."
 }
 ```
 
@@ -144,13 +151,15 @@ pyinstaller --onedir --name homilymonitor --hidden-import boto3 --hidden-import 
 
 ````xml
 <service>
-  <id>HomilyMonitor</id>
-  <name>Homily Monitor Service</name>
-  <description>Monitors and processes Mass recordings for homily podcasting.</description>
-  <executable>%BASE%\homilymonitor.exe</executable>
+  <id>homilymonitor</id>
+  <name>Homily Monitor</name>
+  <description>This service monitors for new homilies and generates podcasts</description>
   <workingdirectory>%BASE%</workingdirectory>
-  <logmode>rotate</logmode>
+  <executable>homilymonitor.exe</executable>
   <logpath>%BASE%\logs</logpath>
+  <log mode="roll-by-time">
+    <pattern>yyyyMMdd</pattern>
+  </log>
   <onfailure action="restart" delay="10 sec"/>
 </service>
 ````

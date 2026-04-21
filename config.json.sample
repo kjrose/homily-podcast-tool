@@ -9,7 +9,14 @@
     "deviation_model": "gpt-5.4",
     "image_model": "gpt-image-1.5",
     "image_size": "1024x1024",
-    "image_quality": "auto"
+    "image_quality": "high"
+  },
+
+  "logging": {
+    "log_dir": "logs",
+    "hot_retention_days": 7,
+    "archive_retention_days": 28,
+    "cleanup_interval_hours": 6
   },
 
   "s3": {
@@ -46,5 +53,5 @@
   
   "gpt_description_addon": "Phrase the description in a welcoming, faith-building style that encourages listeners to reflect on their spiritual life.",
   
-  "gpt_image_addon": "Render the image in a stained glass style with vibrant colors and Catholic iconography."
+  "gpt_image_addon": "Prefer scene-driven sacred imagery that closely matches the homily, with strong composition and no visible words or lettering."
 }

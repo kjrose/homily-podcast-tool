@@ -8,15 +8,18 @@ import sys
 # Configure logging (reusing the logger from main.py)
 logger = logging.getLogger('HomilyMonitor')
 
+def get_base_dir():
+    """Return the runtime base directory (project root or frozen executable directory)."""
+    if getattr(sys, 'frozen', False):  # PyInstaller check
+        return os.path.dirname(sys.executable)
+
+    # Move up one level from homily_monitor to the project root (where main.py is)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 def load_config():
     """Load config.json from the directory of main.py or the executable."""
-    # Determine the base directory (main.py or EXE location)
-    if getattr(sys, 'frozen', False):  # PyInstaller check
-        base_dir = os.path.dirname(sys.executable)
-    else:
-        # Move up one level from homily_monitor to the project root (where main.py is)
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
+    base_dir = get_base_dir()
     config_path = os.path.join(base_dir, "config.json")
     
     try:

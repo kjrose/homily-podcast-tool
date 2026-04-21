@@ -26,12 +26,26 @@ VTT_FALLBACK_MODEL = AI_CFG.get("vtt_fallback_model", TEXT_MODEL)
 DEVIATION_MODEL = AI_CFG.get("deviation_model", TEXT_MODEL)
 IMAGE_MODEL = AI_CFG.get("image_model", "gpt-image-1.5")
 IMAGE_SIZE = AI_CFG.get("image_size", "1024x1024")
-IMAGE_QUALITY = AI_CFG.get("image_quality", "auto")
+IMAGE_QUALITY = AI_CFG.get("image_quality", "high")
 
 # Optional add-ons from config (default to empty strings if not present)
 TITLE_ADDON = CFG.get("gpt_title_addon", "")
 DESCRIPTION_ADDON = CFG.get("gpt_description_addon", "")
 IMAGE_ADDON = CFG.get("gpt_image_addon", "")
+
+TEXT_FREE_IMAGE_RULES = (
+    "The final artwork must contain no visible text of any kind: no title text, "
+    "words, letters, numbers, captions, labels, logos, watermarks, signage, "
+    "calligraphy, readable scripture, or readable book pages."
+)
+
+IMAGE_QUALITY_GUIDANCE = (
+    "Create a single cohesive square composition with a clear focal subject and "
+    "strong visual storytelling. Prefer premium sacred editorial illustration or "
+    "painterly realism, cinematic lighting, rich depth, natural anatomy, expressive "
+    "faces and hands, and a clean thumbnail-friendly silhouette. Avoid generic clip art, "
+    "busy collages, split panels, poster layouts, awkward anatomy, and clutter."
+)
 
 
 def request_text_completion(prompt, temperature=0.5, model=None):
@@ -41,6 +55,38 @@ def request_text_completion(prompt, temperature=0.5, model=None):
         temperature=temperature,
     )
     return (response.choices[0].message.content or "").strip()
+
+
+def _normalize_image_quality(value):
+    allowed = {"low", "medium", "high", "auto"}
+    normalized = str(value or "").strip().lower()
+    if normalized in allowed:
+        return normalized
+    return "high"
+
+
+def _build_fallback_image_prompt(title, description):
+    return (
+        f"Create a polished square podcast cover image inspired by a Catholic homily about "
+        f"'{title}'. Use the title only as thematic guidance, never as text in the image. "
+        f"Draw from these homily themes: {description[:220]}. "
+        f"Show one emotionally resonant sacred scene with refined composition, warm luminous "
+        f"color, cinematic light, and meaningful Catholic symbolism only where it fits naturally. "
+        f"{IMAGE_QUALITY_GUIDANCE} {TEXT_FREE_IMAGE_RULES}"
+    )
+
+
+def _finalize_image_prompt(prompt, title, description):
+    base_prompt = (prompt or "").strip()
+    if not base_prompt:
+        base_prompt = _build_fallback_image_prompt(title, description)
+
+    return (
+        f"{base_prompt}\n\n"
+        "Additional non-negotiable requirements: "
+        f"Use the homily title '{title}' only as thematic context, not as rendered text. "
+        f"{IMAGE_QUALITY_GUIDANCE} {TEXT_FREE_IMAGE_RULES}"
+    )
 
 
 def analyze_transcript_with_gpt(mp3_path, transcript_text, last_mod):
@@ -130,17 +176,21 @@ def generate_podcast_image(title, description):
     """Generate a square podcast image using GPT Image with a GPT-crafted prompt."""
     # Step 1: Use GPT to create an optimized GPT Image prompt
     prompt_craft = f"""
-You are a creative AI artist specializing in podcast cover art for Catholic homilies.
+You are a creative director specializing in premium podcast cover art for Catholic homilies.
 
 Given the homily title: '{title}'
 And description: '{description[:300]}' (truncated if long)
 
-Craft a highly detailed, effective GPT Image prompt (50-100 words) for a 1024x1024 square image. Include:
-- Vivid, engaging visual themes inspired by the homily (e.g., religious symbols, serene landscapes).
-- Warm, inviting colors with high contrast for podcast thumbnails.
-- Overlay the title '{title}' in elegant, readable font.
-- Style: Realistic or illustrative, cinematic lighting, high detail.
-- Avoid boring/generic; make it dynamic and thematic.{IMAGE_ADDON}
+Write a production-ready image prompt for a 1024x1024 square cover image.
+
+Requirements:
+- Use the homily title only as thematic context. Never ask for the title, words, letters, typography, captions, logos, watermarks, signage, readable scripture, or any other visible text in the image.
+- Focus on one cohesive, emotionally resonant sacred scene that aligns closely with the homily instead of generic church clip art.
+- Make the image strong at thumbnail size with a clear focal point, layered depth, rich color, and cinematic light.
+- Prefer premium sacred editorial illustration or painterly realism with natural anatomy and expressive faces/hands.
+- Avoid busy collages, split layouts, poster design, stock-art feel, or awkward/deformed details.
+- If symbolism is used, keep it subtle and directly relevant to the homily.
+- Keep the output fully visual and text-free.{IMAGE_ADDON}
 
 Respond ONLY with the raw image prompt string, no additional text.
 """
@@ -152,10 +202,11 @@ Respond ONLY with the raw image prompt string, no additional text.
             temperature=0.7,
             model=IMAGE_PROMPT_MODEL,
         )
+        refined_prompt = _finalize_image_prompt(refined_prompt, title, description)
         logger.debug(f"Refined GPT Image prompt: {refined_prompt}")
     except Exception as e:
         logger.error(f"Failed to craft prompt with GPT for {title}: {e}")
-        refined_prompt = f"A serene, inspirational square podcast cover for a Catholic homily titled '{title}'. Incorporate subtle religious symbols like a cross or Bible, with themes from: {description[:200]}. Use warm, inviting colors; overlay title in elegant font."  # Fallback
+        refined_prompt = _build_fallback_image_prompt(title, description)
     
     try:
         logger.info(f"Generating podcast image for {title}...")
@@ -163,7 +214,7 @@ Respond ONLY with the raw image prompt string, no additional text.
             model=IMAGE_MODEL,
             prompt=refined_prompt,
             size=IMAGE_SIZE,
-            quality=IMAGE_QUALITY,
+            quality=_normalize_image_quality(IMAGE_QUALITY),
         )
 
         if response.data:
