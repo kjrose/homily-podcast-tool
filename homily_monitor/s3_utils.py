@@ -5,9 +5,11 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 from datetime import datetime, timedelta, timezone
 import logging
+import os
+import posixpath
 
 from .config_loader import CFG
-from .email_utils import send_email_alert
+from .email_utils import send_operational_alert
 
 # Configure logging (reusing the logger from main.py)
 logger = logging.getLogger('HomilyMonitor')
@@ -89,24 +91,45 @@ def reset_s3_alert(alert_key=S3_ALERT_KEY):
 def send_rate_limited_s3_alert(subject, body, alert_key=S3_ALERT_KEY):
     """Send an alert respecting the backoff schedule."""
     if _should_send_s3_alert(alert_key):
-        send_email_alert(subject, body)
+        send_operational_alert(subject, body)
+
+
+def _normalized_s3_folder():
+    normalized = str(S3_FOLDER or "").strip().replace("\\", "/").strip("/")
+    if not normalized:
+        return ""
+    return normalized + "/"
+
+
+def _is_mass_mp3_key(key):
+    filename = posixpath.basename(key or "")
+    return bool(filename) and filename.startswith("Mass-") and filename.lower().endswith(".mp3")
+
+
+def _cleanup_partial_download(local_path):
+    if os.path.exists(local_path):
+        try:
+            os.remove(local_path)
+        except OSError as e:
+            logger.warning(f"Failed to remove partial download {local_path}: {e}")
 
 
 def list_s3_files():
     files = []
     continuation_token = None
+    prefix = _normalized_s3_folder()
     while True:
         try:
-            kwargs = {"Bucket": S3_BUCKET, "Prefix": S3_FOLDER}
+            kwargs = {"Bucket": S3_BUCKET, "Prefix": prefix}
             if continuation_token:
                 kwargs["ContinuationToken"] = continuation_token
-            logger.debug(f"Listing S3 objects in {S3_BUCKET} with prefix {S3_FOLDER}...")
+            logger.debug(f"Listing S3 objects in {S3_BUCKET} with prefix {prefix}...")
             response = s3_client.list_objects_v2(**kwargs)
             logger.debug("S3 list_objects_v2 response received.")
             if "Contents" in response:
                 for obj in response["Contents"]:
                     key = obj["Key"]
-                    if key.startswith("Mass-") and key.endswith(".mp3"):
+                    if _is_mass_mp3_key(key):
                         files.append({"Key": key, "LastModified": obj["LastModified"]})
             if not response.get("IsTruncated", False):
                 logger.debug(f"Completed listing {len(files)} files from {S3_BUCKET}")
@@ -141,20 +164,28 @@ def is_file_within_last_48_hours(last_modified):
 
 def download_file(s3_key, local_path):
     try:
+        local_dir = os.path.dirname(local_path)
+        if local_dir:
+            os.makedirs(local_dir, exist_ok=True)
         logger.info(f"Downloading {s3_key} to {local_path}...")
         s3_client.download_file(S3_BUCKET, s3_key, local_path)
         logger.info("Download successful.")
         reset_s3_alert()
+        return True
     except ClientError as e:
+        _cleanup_partial_download(local_path)
         error_msg = e.response["Error"]["Message"]
         logger.error(f"S3 client error downloading {s3_key} to {local_path}: {error_msg}")
         send_rate_limited_s3_alert(
             "S3 Download Failure",
             f"S3 client error for {s3_key}: {e}",
         )
+        return False
     except Exception as e:
+        _cleanup_partial_download(local_path)
         logger.error(f"Unexpected error downloading {s3_key} to {local_path}: {e}")
         send_rate_limited_s3_alert(
             "S3 Download Failure",
             f"Unexpected download error for {s3_key}: {e}",
         )
+        return False

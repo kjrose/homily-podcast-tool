@@ -38,7 +38,7 @@ pip install -r requirements.txt
 ````
 
 4. **Configure**:
-Copy `config.json.sample` to `config.json` and fill in your details (API keys, paths, etc.).
+Copy `config.json.sample` to `config.json` and fill in your details (API keys, paths, church timezone, etc.). Set `paths.ffmpeg` if FFmpeg is not already available on your PATH.
 
 5. **FFmpeg**: Ensure FFmpeg is installed and in your PATH. Download from [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html) or use Winget: `winget install Gyan.FFmpeg`.
 
@@ -57,6 +57,16 @@ python main.py
 - `--upload-latest`: Upload the latest extracted homily to WordPress as a draft.
 - `--extract`: Extract homily for specific Mass-YYYY-MM-DD_HH-MM.mp3 (e.g., --extract 2025-07-20_18-00).
 - `--upload`: Upload specific Homily-YYYY-MM-DD_HH-MM.mp3 to WordPress (e.g., --upload 2025-07-20_18-00).
+- `--retry-upload-date`: Check all local homilies for a specific date (`YYYY-MM-DD`) against WordPress and upload only the missing ones.
+- `--retry-upload-last-days`: Check local homilies from the last `X` days, including today, against WordPress and upload only the missing ones.
+- `--list-homilies-last-days`: List WordPress homilies and local homily files from the last `X` days, including today.
+
+Examples:
+````bash
+python main.py --retry-upload-date 2026-04-27
+python main.py --retry-upload-last-days 7
+python main.py --list-homilies-last-days 7
+````
 
 The script runs in monitoring mode by default, polling S3 every 60 seconds.
 
@@ -82,6 +92,15 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds.
     "archive_retention_days": 28,
     "cleanup_interval_hours": 6
   },
+  "network": {
+    "smtp_timeout_seconds": 30,
+    "smtp_retry_attempts": 2,
+    "smtp_retry_delay_seconds": 2,
+    "wordpress_connect_timeout_seconds": 10,
+    "wordpress_read_timeout_seconds": 60,
+    "wordpress_retry_attempts": 2,
+    "wordpress_retry_backoff_seconds": 2
+  },
   "s3": {
     "endpoint": "https://s3.example.com",
     "bucket": "your-bucket",
@@ -92,7 +111,11 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds.
   "paths": {
     "local_dir": "./downloads",
     "batch_file": "./TranscribeHomilies.bat",
-    "db_path": "./homilies.db"
+    "db_path": "./homilies.db",
+    "ffmpeg": "ffmpeg"
+  },
+  "church": {
+    "timezone": "America/Edmonton"
   },
   "email": {
     "smtp_server": "smtp.gmail.com",

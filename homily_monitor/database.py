@@ -2,6 +2,7 @@
 
 import sqlite3
 import logging
+import os
 
 from .config_loader import CFG
 
@@ -17,6 +18,9 @@ def get_conn():
     global CONN
     if CONN is None:
         try:
+            db_dir = os.path.dirname(DB_PATH)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
             CONN = sqlite3.connect(DB_PATH)
             cursor = CONN.cursor()
             
@@ -83,3 +87,19 @@ def insert_homily(group_key, filename, date, title, description, special, liturg
     except Exception as e:
         logger.error(f"Error inserting homily {filename}: {e}")
         raise
+
+
+def get_latest_homily_analysis(filename):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT title, description, special, liturgical_day, lit_year, date
+        FROM homilies
+        WHERE filename = ?
+        ORDER BY processed_at DESC, id DESC
+        LIMIT 1
+        """,
+        (filename,),
+    )
+    return cursor.fetchone()

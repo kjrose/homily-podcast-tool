@@ -47,6 +47,8 @@ IMAGE_QUALITY_GUIDANCE = (
     "busy collages, split panels, poster layouts, awkward anatomy, and clutter."
 )
 
+HOMILY_IMAGE_TRANSCRIPT_CHAR_LIMIT = 4000
+
 
 def request_text_completion(prompt, temperature=0.5, model=None):
     response = client.chat.completions.create(
@@ -65,7 +67,31 @@ def _normalize_image_quality(value):
     return "high"
 
 
-def _build_fallback_image_prompt(title, description):
+def _normalize_homily_excerpt(homily_text, max_chars=HOMILY_IMAGE_TRANSCRIPT_CHAR_LIMIT):
+    cleaned = " ".join(str(homily_text or "").split())
+    if not cleaned:
+        return ""
+    if len(cleaned) <= max_chars:
+        return cleaned
+
+    truncated = cleaned[:max_chars].rsplit(" ", 1)[0].strip()
+    return f"{truncated or cleaned[:max_chars].strip()} ..."
+
+
+def _build_fallback_image_prompt(title, description, homily_text=None):
+    homily_excerpt = _normalize_homily_excerpt(homily_text)
+    if homily_excerpt:
+        return (
+            "Create a polished square podcast cover image inspired directly by this Catholic homily excerpt: "
+            f"{homily_excerpt} "
+            f"Use the homily title '{title}' only as secondary thematic guidance, never as text in the image. "
+            f"Supplemental homily description: {description[:220]}. "
+            "Base the scene on the preached message itself rather than the Mass as a whole. "
+            "Show one emotionally resonant sacred scene with refined composition, warm luminous "
+            f"color, cinematic light, and meaningful Catholic symbolism only where it fits naturally. "
+            f"{IMAGE_QUALITY_GUIDANCE} {TEXT_FREE_IMAGE_RULES}"
+        )
+
     return (
         f"Create a polished square podcast cover image inspired by a Catholic homily about "
         f"'{title}'. Use the title only as thematic guidance, never as text in the image. "
@@ -76,14 +102,27 @@ def _build_fallback_image_prompt(title, description):
     )
 
 
-def _finalize_image_prompt(prompt, title, description):
+def _finalize_image_prompt(prompt, title, description, homily_text=None):
     base_prompt = (prompt or "").strip()
     if not base_prompt:
-        base_prompt = _build_fallback_image_prompt(title, description)
+        base_prompt = _build_fallback_image_prompt(title, description, homily_text)
+
+    homily_excerpt = _normalize_homily_excerpt(homily_text)
+    if homily_excerpt:
+        homily_context_rule = (
+            f"Use this homily excerpt as the primary thematic source: {homily_excerpt} "
+            "Treat the title and description only as supporting metadata. "
+            "Align to the preached message rather than the broader Mass setting. "
+        )
+    else:
+        homily_context_rule = (
+            "Align to the homily itself rather than the broader Mass setting. "
+        )
 
     return (
         f"{base_prompt}\n\n"
         "Additional non-negotiable requirements: "
+        f"{homily_context_rule}"
         f"Use the homily title '{title}' only as thematic context, not as rendered text. "
         f"{IMAGE_QUALITY_GUIDANCE} {TEXT_FREE_IMAGE_RULES}"
     )
@@ -172,18 +211,31 @@ Respond using this JSON format:
         send_email_alert(mp3_path, f"GPT analysis failed:\n\n{e}")
 
 
-def generate_podcast_image(title, description):
-    """Generate a square podcast image using GPT Image with a GPT-crafted prompt."""
-    # Step 1: Use GPT to create an optimized GPT Image prompt
+def generate_podcast_image(title, description, homily_text=None):
+    """Generate a square podcast image using GPT Image with homily-first context."""
+    homily_excerpt = _normalize_homily_excerpt(homily_text)
+    if homily_excerpt:
+        homily_context_block = f"""
+Primary homily transcript excerpt (use this as the main source for the image concept; truncated if long):
+{homily_excerpt}
+"""
+    else:
+        homily_context_block = (
+            "No homily transcript excerpt is available. Rely on the title and description only.\n"
+        )
+
     prompt_craft = f"""
 You are a creative director specializing in premium podcast cover art for Catholic homilies.
 
 Given the homily title: '{title}'
 And description: '{description[:300]}' (truncated if long)
+{homily_context_block}
 
 Write a production-ready image prompt for a 1024x1024 square cover image.
 
 Requirements:
+- If a homily transcript excerpt is provided, use it as the primary source. The image should reflect the preached message, emotional arc, and concrete imagery of the homily, not the Mass in general.
+- Treat the title and description as secondary metadata for clarification only.
 - Use the homily title only as thematic context. Never ask for the title, words, letters, typography, captions, logos, watermarks, signage, readable scripture, or any other visible text in the image.
 - Focus on one cohesive, emotionally resonant sacred scene that aligns closely with the homily instead of generic church clip art.
 - Make the image strong at thumbnail size with a clear focal point, layered depth, rich color, and cinematic light.
@@ -202,11 +254,11 @@ Respond ONLY with the raw image prompt string, no additional text.
             temperature=0.7,
             model=IMAGE_PROMPT_MODEL,
         )
-        refined_prompt = _finalize_image_prompt(refined_prompt, title, description)
+        refined_prompt = _finalize_image_prompt(refined_prompt, title, description, homily_text)
         logger.debug(f"Refined GPT Image prompt: {refined_prompt}")
     except Exception as e:
         logger.error(f"Failed to craft prompt with GPT for {title}: {e}")
-        refined_prompt = _build_fallback_image_prompt(title, description)
+        refined_prompt = _build_fallback_image_prompt(title, description, homily_text)
     
     try:
         logger.info(f"Generating podcast image for {title}...")

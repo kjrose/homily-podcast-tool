@@ -19,6 +19,16 @@
     "cleanup_interval_hours": 6
   },
 
+  "network": {
+    "smtp_timeout_seconds": 30,
+    "smtp_retry_attempts": 2,
+    "smtp_retry_delay_seconds": 2,
+    "wordpress_connect_timeout_seconds": 10,
+    "wordpress_read_timeout_seconds": 60,
+    "wordpress_retry_attempts": 2,
+    "wordpress_retry_backoff_seconds": 2
+  },
+
   "s3": {
     "endpoint": "your_s3_endpoint_url",
     "bucket": "your_s3_bucket_name",
@@ -30,7 +40,12 @@
   "paths": {
     "local_dir": "/path/to/local/directory",
     "batch_file": "/path/to/batch/file.bat",
-    "db_path": "/path/to/homilies.db"
+    "db_path": "/path/to/homilies.db",
+    "ffmpeg": "ffmpeg"
+  },
+
+  "church": {
+    "timezone": "America/Edmonton"
   },
 
   "email": {

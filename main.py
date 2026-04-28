@@ -13,7 +13,7 @@ from homily_monitor import (
     s3_utils,
     audio_utils,
     helpers,
-    wordpress_utils,  # Add this import
+    wordpress_utils,
     log_utils,
 )
 
@@ -23,7 +23,26 @@ CFG = cfg_mod.CFG
 _ = database.get_conn()  # Initialize DB early
 
 
+def _positive_int(value):
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def _homily_date(value):
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be in YYYY-MM-DD format") from exc
+    return value
+
+
 def main():
+    os.makedirs(CFG["paths"]["local_dir"], exist_ok=True)
     logger.info("Starting S3 monitoring...")
     next_log_cleanup = datetime.now(timezone.utc)
     while True:
@@ -47,9 +66,13 @@ def main():
                     continue
 
                 logger.info(f"Downloading {s3_key} to {local_path}...")
-                s3_utils.download_file(s3_key, local_path)
+                if not s3_utils.download_file(s3_key, local_path):
+                    logger.warning(f"Skipping downstream processing for {s3_key} because download failed.")
+                    continue
                 logger.info(f"Running batch file on {local_path}...")
-                audio_utils.run_batch_file(local_path)
+                if not audio_utils.run_batch_file(local_path):
+                    logger.warning(f"Skipping transcript processing for {local_path} because batch processing failed.")
+                    continue
                 logger.info(f"Checking transcript for {local_path}...")
                 helpers.check_transcript(local_path, file["LastModified"])
 
@@ -62,6 +85,7 @@ def main():
 
 
 if __name__ == "__main__":
+    os.makedirs(CFG["paths"]["local_dir"], exist_ok=True)
     log_utils.cleanup_logs(logger)
     parser = argparse.ArgumentParser(description="Mass Downloader and Transcript Checker")
     group = parser.add_mutually_exclusive_group()
@@ -72,6 +96,21 @@ if __name__ == "__main__":
     group.add_argument("--upload-latest", action="store_true", help="Upload the latest extracted homily to WordPress as a draft")
     group.add_argument("--extract", type=str, help="Extract homily for specific Mass-YYYY-MM-DD_HH-MM.mp3 (e.g., --extract 2025-07-20_18-00)")
     group.add_argument("--upload", type=str, help="Upload specific Homily-YYYY-MM-DD_HH-MM.mp3 to WordPress (e.g., --upload 2025-07-20_18-00)")
+    group.add_argument(
+        "--retry-upload-date",
+        type=_homily_date,
+        help="Check all homilies for a specific date (YYYY-MM-DD) and upload only the ones missing from WordPress",
+    )
+    group.add_argument(
+        "--retry-upload-last-days",
+        type=_positive_int,
+        help="Check homilies from the last X days, including today, and upload only the ones missing from WordPress",
+    )
+    group.add_argument(
+        "--list-homilies-last-days",
+        type=_positive_int,
+        help="List WordPress homilies and local homily files from the last X days, including today",
+    )
     args = parser.parse_args()
 
     if args.test:
@@ -106,6 +145,22 @@ if __name__ == "__main__":
             sys.exit(1)
         logger.info(f"Uploading homily for {homily_file}...")
         wordpress_utils.upload_to_wordpress(homily_file, mass_file)
+    elif args.retry_upload_date:
+        logger.info(f"Retry-checking WordPress uploads for homilies on {args.retry_upload_date}...")
+        wordpress_utils.retry_missing_uploads_for_date(args.retry_upload_date)
+    elif args.retry_upload_last_days:
+        logger.info(
+            f"Retry-checking WordPress uploads for homilies from the last {args.retry_upload_last_days} days..."
+        )
+        wordpress_utils.retry_missing_uploads_for_last_days(args.retry_upload_last_days)
+    elif args.list_homilies_last_days:
+        logger.info(
+            f"Listing WordPress and local homilies from the last {args.list_homilies_last_days} days..."
+        )
+        report = wordpress_utils.list_homilies_for_last_days(args.list_homilies_last_days)
+        if report is None:
+            sys.exit(1)
+        print(report)
     else:
         try:
             main()

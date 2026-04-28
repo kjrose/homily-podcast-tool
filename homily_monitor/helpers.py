@@ -74,11 +74,14 @@ def check_transcript(mp3_path, last_mod=None):
     transcript_path = os.path.splitext(mp3_path)[0] + ".txt"
     logger.info(f"Checking transcript for {mp3_path}...")
     content = validate_and_get_transcript(transcript_path, mp3_path)
-    if content:
-        logger.info(f"Analyzing transcript for {mp3_path} with GPT...")
-        analyze_transcript_with_gpt(mp3_path, content, last_mod)
-        logger.info(f"Extracting homily from {mp3_path}...")
-        extract_homily_from_vtt(mp3_path)
+    if not content:
+        return False
+
+    logger.info(f"Analyzing transcript for {mp3_path} with GPT...")
+    analyze_transcript_with_gpt(mp3_path, content, last_mod)
+    logger.info(f"Extracting homily from {mp3_path}...")
+    extract_homily_from_vtt(mp3_path)
+    return True
 
 
 def analyze_latest_transcript():
@@ -138,7 +141,9 @@ def run_latest_test():
         return
 
     logger.info(f"Found latest MP3: {latest}")
-    run_batch_file(latest)
+    if not run_batch_file(latest):
+        logger.error(f"Batch processing failed for {latest}")
+        return
 
     transcript_path = os.path.splitext(latest)[0] + ".txt"
     content = validate_and_get_transcript(transcript_path, latest)
