@@ -35,7 +35,10 @@ Desktop.ini
 *.swo
 *~
 
+.pycache_tmp
+
 # Logs
+logs
 *.log
 
 # Virtual environments
