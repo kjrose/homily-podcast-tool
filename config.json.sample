@@ -48,6 +48,31 @@
     "timezone": "America/Edmonton"
   },
 
+  "speaker_identification": {
+    "enabled": false,
+    "provider": "speechbrain",
+    "model_source": "speechbrain/spkrec-ecapa-voxceleb",
+    "model_cache_dir": "./models/spkrec-ecapa-voxceleb",
+    "decision_threshold": 0.25,
+    "matching_threshold": 80,
+    "fallback_label": "Homilist",
+    "enrolled_speakers": [
+      {
+        "name": "Fr. Example",
+        "sample_paths": [
+          "./speaker_samples/fr-example-1.wav",
+          "./speaker_samples/fr-example-2.wav"
+        ]
+      },
+      {
+        "name": "Deacon Example",
+        "sample_paths": [
+          "./speaker_samples/deacon-example-1.wav"
+        ]
+      }
+    ]
+  },
+
   "email": {
     "smtp_server": "smtp.example.com",
     "smtp_port": 587,

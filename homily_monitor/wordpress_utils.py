@@ -1,20 +1,19 @@
 # homily_monitor/wordpress_utils.py
 
 import os
+import re
 import time
 from datetime import datetime, timedelta
-from html import unescape
+from html import escape, unescape
 import logging
 
 import pytz
 import requests
 
 from .config_loader import CFG
-from .audio_utils import extract_homily_transcript_from_vtt
-from .database import get_latest_homily_analysis
-from .email_utils import send_email_alert, send_success_email
-from .gpt_utils import analyze_transcript_with_gpt, generate_podcast_image
-from .helpers import validate_and_get_transcript
+from .database import get_latest_homily_analysis, get_most_recent_homily_analysis
+from .email_utils import create_inline_image, send_email_alert, send_success_email
+from .speaker_utils import get_homilist_fallback_label
 
 
 # Configure logging (reusing the logger from main.py)
@@ -145,6 +144,370 @@ def _one_line_text(value, fallback=""):
         return fallback
     text = " ".join(str(value).split())
     return text if text else fallback
+
+
+def _format_homily_date(date_str):
+    try:
+        return datetime.strptime(str(date_str), "%Y-%m-%d").strftime("%B %d, %Y")
+    except (TypeError, ValueError):
+        return _one_line_text(date_str, "Unknown Date")
+
+
+def _display_homilist_name(homilist):
+    cleaned = _one_line_text(str(homilist or "").replace("**", ""), "")
+    return cleaned or "Homilist"
+
+
+def _build_homily_full_title(title, lit_day, lit_year, date_str, homilist_name=""):
+    formatted_date = _format_homily_date(date_str)
+    homilist = _display_homilist_name(homilist_name or get_homilist_fallback_label())
+    return (
+        f"{formatted_date} – {lit_day or 'Unknown Sunday'} – "
+        f"{lit_year or 'Unknown'} – {homilist} – “{title}”"
+    )
+
+
+def _render_html_text_block(value):
+    return escape(str(value or "").strip()).replace("\n", "<br>")
+
+
+def _strip_html(value):
+    text = re.sub(r"<[^>]+>", " ", str(value or ""))
+    return _one_line_text(unescape(text), "")
+
+
+def _extract_short_title(post_title, fallback="Homily"):
+    title = _one_line_text(post_title, "")
+    if not title:
+        return fallback
+
+    if "“" in title and "”" in title:
+        quoted = title.split("“", 1)[1].rsplit("”", 1)[0].strip()
+        if quoted:
+            return quoted
+
+    if '"' in title:
+        parts = title.split('"')
+        if len(parts) >= 3 and parts[1].strip():
+            return parts[1].strip()
+
+    return title
+
+
+def _build_email_button(url, label, background_color, text_color, border_color):
+    safe_url = _one_line_text(url, "")
+    safe_label = _one_line_text(label, "")
+    if not safe_url or not safe_label:
+        return ""
+
+    return (
+        '<table role="presentation" border="0" cellspacing="0" cellpadding="0" align="left" '
+        'style="border-collapse:separate;">'
+        "<tr>"
+        f'<td align="center" bgcolor="{background_color}" '
+        f'style="border:1px solid {border_color}; background:{background_color}; padding:0 18px; '
+        'height:40px; mso-padding-alt:10px 18px 10px 18px;">'
+        f'<a href="{escape(safe_url, quote=True)}" '
+        f'style="display:block; font-family:Arial, Helvetica, sans-serif; font-size:14px; '
+        f'line-height:40px; font-weight:700; color:{text_color}; text-decoration:none; '
+        'white-space:nowrap;">'
+        f"{escape(safe_label)}"
+        "</a>"
+        "</td>"
+        "</tr>"
+        "</table>"
+    )
+
+
+def _build_homily_success_email_content(
+    *,
+    title_text,
+    full_title,
+    description,
+    audio_url,
+    edit_url,
+    date_str,
+    image_content_id=None,
+    image_url="",
+    preview_note="",
+    edit_action_label="Edit Podcast",
+):
+    formatted_date = _format_homily_date(date_str)
+    safe_title = _one_line_text(title_text, full_title)
+    safe_description = str(description or "").strip() or "No description available."
+    safe_preview_note = _one_line_text(preview_note, "")
+    image_src = ""
+    if image_content_id:
+        image_src = f"cid:{image_content_id}"
+    elif image_url:
+        image_src = image_url
+
+    preview_note_html = ""
+    if safe_preview_note:
+        preview_note_html = (
+            '<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">'
+            "<tr>"
+            '<td style="border:1px solid #e5d8c8; background:#f8f2e9; padding:12px 14px; '
+            'font-family:Arial, Helvetica, sans-serif; font-size:13px; line-height:19px; '
+            'color:#6a5440;">'
+            f"{escape(safe_preview_note)}"
+            "</td>"
+            "</tr>"
+            '<tr><td height="18" style="font-size:0; line-height:0;">&nbsp;</td></tr>'
+            "</table>"
+        )
+
+    image_block_html = ""
+    if image_src:
+        image_block_html = (
+            f'<img src="{escape(image_src, quote=True)}" alt="Homily cover art" '
+            'width="136" '
+            'style="display:block; width:136px; height:auto; border:0; outline:none; text-decoration:none;" />'
+        )
+    else:
+        image_block_html = (
+            '<table role="presentation" width="136" border="0" cellspacing="0" cellpadding="0">'
+            "<tr>"
+            '<td width="136" height="136" style="width:136px; height:136px; background:#e7d8c5; '
+            'border:1px solid #dcc9b3; font-size:0; line-height:0;">&nbsp;</td>'
+            "</tr>"
+            "</table>"
+        )
+
+    audio_link_html = _build_email_button(
+        audio_url,
+        "Listen to Audio",
+        "#f3e6d3",
+        "#5c3a17",
+        "#ddc7a8",
+    )
+    edit_link_html = _build_email_button(
+        edit_url,
+        edit_action_label,
+        "#fffdf9",
+        "#5c3a17",
+        "#ddc7a8",
+    )
+
+    buttons_html = ""
+    if audio_link_html or edit_link_html:
+        button_cells = ""
+        if audio_link_html:
+            button_cells += (
+                '<td valign="top" style="padding:0 10px 0 0;">'
+                f"{audio_link_html}"
+                "</td>"
+            )
+        if edit_link_html:
+            button_cells += (
+                '<td valign="top" style="padding:0;">'
+                f"{edit_link_html}"
+                "</td>"
+            )
+
+        buttons_html = (
+            '<table role="presentation" border="0" cellspacing="0" cellpadding="0">'
+            '<tr><td height="18" style="font-size:0; line-height:0;">&nbsp;</td></tr>'
+            f"<tr>{button_cells}</tr>"
+            "</table>"
+        )
+
+    plain_lines = [
+        "Successfully uploaded homily to WordPress as a draft:",
+        full_title,
+    ]
+    if safe_preview_note:
+        plain_lines.extend(["", f"Note: {safe_preview_note}"])
+    plain_lines.extend(
+        [
+            "",
+            f"Title: {safe_title}",
+            f"Full Title: {full_title}",
+            f"Date: {formatted_date}",
+            f"Audio URL: {audio_url or 'Preview only'}",
+            f"Edit Podcast: {edit_url or 'Not available'}",
+            "",
+            f"Description: {safe_description}",
+        ]
+    )
+
+    html_message = (
+        '<!DOCTYPE html>'
+        '<html lang="en" xmlns="http://www.w3.org/1999/xhtml">'
+        "<head>"
+        '<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />'
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0" />'
+        '<meta http-equiv="X-UA-Compatible" content="IE=edge" />'
+        '<meta name="x-apple-disable-message-reformatting" />'
+        "<title>Homily Upload</title>"
+        "</head>"
+        '<body style="margin:0; padding:0; background:#f4efe8;">'
+        '<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" '
+        'style="width:100%; border-collapse:collapse; background:#f4efe8; margin:0; padding:0;">'
+        "<tr>"
+        '<td align="center" style="padding:24px 12px;">'
+        '<table role="presentation" width="620" border="0" cellspacing="0" cellpadding="0" '
+        'style="width:620px; max-width:620px; border-collapse:collapse; background:#fffdf9; '
+        'border:1px solid #eadfce;">'
+        "<tr>"
+        '<td style="padding:24px;">'
+        f"{preview_note_html}"
+        '<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" '
+        'style="width:100%; border-collapse:collapse;">'
+        "<tr>"
+        '<td valign="top" width="154" style="width:154px; padding:0 18px 0 0;">'
+        f"{image_block_html}"
+        "</td>"
+        '<td valign="top" style="font-family:Arial, Helvetica, sans-serif; color:#2f261f;">'
+        '<p style="margin:0 0 8px 0; font-family:Arial, Helvetica, sans-serif; font-size:11px; '
+        'line-height:16px; font-weight:700; color:#94704a; text-transform:uppercase; '
+        'letter-spacing:1px;">Homily Draft</p>'
+        f'<p style="margin:0 0 10px 0; font-family:Georgia, Times New Roman, serif; font-size:23px; '
+        f'line-height:30px; font-weight:700; color:#241b15;">{escape(safe_title)}</p>'
+        f'<p style="margin:0 0 14px 0; font-family:Arial, Helvetica, sans-serif; font-size:13px; '
+        f'line-height:20px; color:#7d6856;">{escape(full_title)}</p>'
+        f'<p style="margin:0 0 14px 0; font-family:Arial, Helvetica, sans-serif; font-size:14px; '
+        f'line-height:20px; color:#7a6250;">{escape(formatted_date)}</p>'
+        f'<p style="margin:0; font-family:Arial, Helvetica, sans-serif; font-size:14px; '
+        f'line-height:24px; color:#3d3128;">{_render_html_text_block(safe_description)}</p>'
+        f"{buttons_html}"
+        "</td>"
+        "</tr>"
+        "</table>"
+        "</td>"
+        "</tr>"
+        "</table>"
+        "</td>"
+        "</tr>"
+        "</table>"
+        "</body>"
+        "</html>"
+    )
+
+    return "\n".join(plain_lines), html_message
+
+
+def _recover_homily_transcript_excerpt(original_mp3_path, original_filename):
+    if not os.path.exists(original_mp3_path):
+        logger.info(
+            f"Original Mass file unavailable for {original_filename}; using metadata fallback for image generation."
+        )
+        return None
+
+    try:
+        from .audio_utils import extract_homily_transcript_from_vtt
+    except ModuleNotFoundError as exc:
+        logger.warning(
+            f"Transcript excerpt recovery unavailable for {original_filename}: missing dependency {exc.name}."
+        )
+        return None
+
+    homily_transcript = extract_homily_transcript_from_vtt(original_mp3_path, send_alerts=False)
+    if homily_transcript:
+        logger.info(
+            f"Recovered homily-only transcript excerpt for image generation for {original_filename}."
+        )
+    else:
+        logger.info(
+            f"No homily-only transcript excerpt available for {original_filename}; using metadata fallback for image generation."
+        )
+    return homily_transcript
+
+
+def _generate_podcast_image_if_available(title, description, homily_text=None):
+    try:
+        from .gpt_utils import generate_podcast_image
+    except ModuleNotFoundError as exc:
+        logger.warning(
+            f"Podcast image generation unavailable because dependency '{exc.name}' is not installed."
+        )
+        return None
+
+    return generate_podcast_image(title, description, homily_text=homily_text)
+
+
+def _fetch_wordpress_media_item(media_id):
+    if not media_id:
+        return None
+
+    media_url = f"{WP_URL}/wp-json/wp/v2/media/{media_id}"
+    auth = (WP_USER, WP_APP_PASS)
+    try:
+        response = _get_with_retries(
+            media_url,
+            f"WordPress media lookup for {media_id}",
+            lambda: {"auth": auth},
+        )
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"WordPress media lookup failed for {media_id}: {e}")
+        return None
+
+    if response.status_code != 200:
+        logger.warning(f"WordPress media lookup failed for {media_id}: {response.text}")
+        return None
+
+    return response.json()
+
+
+def _extract_cover_image_url_from_post(post):
+    meta = post.get("meta", {})
+    if isinstance(meta, dict):
+        cover_image = _one_line_text(meta.get("cover_image"), "")
+        if cover_image:
+            return cover_image
+
+    featured_media_id = post.get("featured_media")
+    if featured_media_id:
+        media_item = _fetch_wordpress_media_item(featured_media_id)
+        if media_item:
+            return _one_line_text(media_item.get("source_url"), "")
+
+    return ""
+
+
+def _extract_audio_url_from_post(post):
+    meta = post.get("meta", {})
+    if not isinstance(meta, dict):
+        return ""
+    return _one_line_text(meta.get("audio_file"), "")
+
+
+def _download_inline_image_from_url(image_url, filename="podcast_cover-preview.png"):
+    safe_url = _one_line_text(image_url, "")
+    if not safe_url:
+        return None
+
+    try:
+        response = _get_with_retries(
+            safe_url,
+            "Preview cover image download",
+            lambda: {},
+        )
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Preview cover image download failed: {e}")
+        return None
+
+    if response.status_code != 200 or not response.content:
+        logger.warning(f"Preview cover image download failed: HTTP {response.status_code}")
+        return None
+
+    content_type = _one_line_text(response.headers.get("Content-Type"), "image/png").lower()
+    subtype = "png"
+    if "/" in content_type:
+        subtype = content_type.split("/", 1)[1].split(";", 1)[0].strip() or "png"
+
+    return create_inline_image(
+        response.content,
+        subtype=subtype,
+        filename=filename,
+    )
+
+
+def _get_latest_wordpress_podcast_post():
+    posts = _fetch_recent_podcast_posts()
+    if not posts:
+        return None
+    return posts[0]
 
 
 def _parse_recording_datetime(filename, prefix):
@@ -429,7 +792,7 @@ def _build_local_homily_report_lines(candidates, server_local_dates=None, server
         special = ""
         analysis_date = ""
         if analysis_row:
-            title, _, special, lit_day, lit_year, analysis_date = analysis_row
+            title, _, special, lit_day, lit_year, analysis_date, _, _, _ = analysis_row
             title = _one_line_text(title, "(analysis not available)")
             liturgy = _one_line_text(
                 " | ".join(part for part in [lit_day, lit_year] if part),
@@ -550,6 +913,9 @@ def _retry_candidates(candidates, selection_label):
 
 
 def upload_to_wordpress(homily_path, original_mp3_path):
+    from .gpt_utils import analyze_transcript_with_gpt
+    from .helpers import validate_and_get_transcript
+
     filename = os.path.basename(original_mp3_path)
     logger.info(f"Checking database for analysis of {filename}...")
     row = get_latest_homily_analysis(filename)
@@ -566,7 +932,7 @@ def upload_to_wordpress(homily_path, original_mp3_path):
             send_email_alert(homily_path, "Failed to generate analysis for homily upload.")
             return False
 
-    title, description, special, lit_day, lit_year, date_str = row
+    title, description, special, lit_day, lit_year, date_str, homilist_name, _, _ = row
     original_filename = os.path.basename(original_mp3_path)
 
     try:
@@ -576,10 +942,7 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         send_email_alert(homily_path, f"Failed to determine publish date for WordPress upload: {e}")
         return False
 
-    date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-    formatted_date = date_obj.strftime("%B %d, %Y")
-    homilist = "**HOMILIST**"
-    full_title = f"{formatted_date} – {lit_day or 'Unknown Sunday'} – {lit_year or 'Unknown'} – {homilist} – “{title}”"
+    full_title = _build_homily_full_title(title, lit_day, lit_year, date_str, homilist_name)
 
     content = description
     if special:
@@ -589,22 +952,24 @@ def upload_to_wordpress(homily_path, original_mp3_path):
     post_url = f"{WP_URL}/wp-json/wp/v2/podcast"
     auth = (WP_USER, WP_APP_PASS)
 
-    homily_transcript = None
-    if os.path.exists(original_mp3_path):
-        homily_transcript = extract_homily_transcript_from_vtt(original_mp3_path, send_alerts=False)
-        if homily_transcript:
-            logger.info(f"Recovered homily-only transcript excerpt for image generation for {original_filename}.")
-        else:
-            logger.info(f"No homily-only transcript excerpt available for {original_filename}; using metadata fallback for image generation.")
-    else:
-        logger.info(f"Original Mass file unavailable for {original_filename}; using metadata fallback for image generation.")
+    homily_transcript = _recover_homily_transcript_excerpt(original_mp3_path, original_filename)
 
     logger.info(f"Generating podcast image for {full_title}...")
-    image_buffer = generate_podcast_image(title, description, homily_text=homily_transcript)
+    image_buffer = _generate_podcast_image_if_available(
+        title,
+        description,
+        homily_text=homily_transcript,
+    )
     featured_media_id = None
     cover_image_url = None
+    inline_cover_image = None
     if image_buffer:
         image_bytes = image_buffer.getvalue()
+        inline_cover_image = create_inline_image(
+            image_bytes,
+            subtype="png",
+            filename="podcast_cover.png",
+        )
         try:
             response = _upload_media_bytes(
                 media_url,
@@ -689,19 +1054,96 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         return False
 
     response_json = response.json()
+    plain_message, html_message = _build_homily_success_email_content(
+        title_text=title,
+        full_title=full_title,
+        description=description,
+        audio_url=audio_url,
+        edit_url=f"{WP_URL}/wp-admin/post.php?post={response_json['id']}&action=edit",
+        date_str=date_str,
+        image_content_id=inline_cover_image["content_id"] if inline_cover_image else None,
+    )
     send_success_email(
         "Homily Upload Successful",
-        (
-            f"Successfully uploaded homily to WordPress as a draft: {full_title}\n\n"
-            f"View draft: {response_json['link']}\n\n"
-            f"Audio URL: {audio_url}\n\n"
-            f"Image URL: {cover_image_url}\n\n"
-            f"Description: {description}\n\n"
-            f"Publish Post: {WP_URL}/wp-admin/post.php?post={response_json['id']}&action=edit"
-        ),
+        plain_message,
+        html_message=html_message,
+        inline_images=[inline_cover_image] if inline_cover_image else None,
     )
     logger.info(f"Uploaded homily as draft to WordPress: {response_json['link']}")
     return True
+
+
+def send_test_upload_success_email(email_to=None):
+    wordpress_post = _get_latest_wordpress_podcast_post()
+    inline_cover_image = None
+    image_url = ""
+
+    if wordpress_post:
+        logger.info("Preparing homily upload email preview from the latest WordPress podcast post.")
+        full_title = _get_wordpress_post_title(wordpress_post)
+        title = _extract_short_title(full_title, fallback=full_title)
+        date_str = _normalize_wp_datetime(wordpress_post.get("date")) or datetime.now(
+            _get_church_timezone()
+        ).strftime("%Y-%m-%dT%H:%M:%S")
+        date_str = date_str[:10]
+        description = _strip_html(
+            wordpress_post.get("excerpt", {}).get("rendered")
+            or wordpress_post.get("content", {}).get("rendered")
+            or ""
+        ) or "Preview of the current homily upload email layout."
+        audio_url = _extract_audio_url_from_post(wordpress_post)
+        edit_url = f"{WP_URL}/wp-admin/post.php?post={wordpress_post['id']}&action=edit"
+        preview_note = "Preview using the latest existing WordPress homily draft/post."
+        image_url = _extract_cover_image_url_from_post(wordpress_post)
+        inline_cover_image = _download_inline_image_from_url(image_url)
+    else:
+        try:
+            latest = get_most_recent_homily_analysis()
+        except Exception as exc:
+            logger.warning(f"Unable to load latest homily analysis for preview email: {exc}")
+            latest = None
+
+        if latest:
+            filename, date_str, title, description, special, lit_day, lit_year, homilist_name, _, _ = latest
+            logger.info(
+                f"WordPress preview source unavailable; using latest stored analysis for preview content: {filename}"
+            )
+            full_title = _build_homily_full_title(title, lit_day, lit_year, date_str, homilist_name)
+        else:
+            date_str = datetime.now(_get_church_timezone()).strftime("%Y-%m-%d")
+            title = "Chosen To Bear Lasting Fruit"
+            description = (
+                "This preview email shows the current homily upload notification layout when no "
+                "existing WordPress post could be loaded."
+            )
+            full_title = title
+            logger.info("No WordPress post or stored homily analysis found; using built-in preview content.")
+
+        audio_url = ""
+        edit_url = f"{WP_URL}/wp-admin/edit.php?post_type=podcast"
+        preview_note = (
+            "Preview only. Existing WordPress media could not be loaded, so this email uses available text content only."
+        )
+
+    plain_message, html_message = _build_homily_success_email_content(
+        title_text=title,
+        full_title=full_title,
+        description=description,
+        audio_url=audio_url,
+        edit_url=edit_url,
+        date_str=date_str,
+        image_content_id=inline_cover_image["content_id"] if inline_cover_image else None,
+        image_url=image_url,
+        preview_note=preview_note,
+    )
+
+    return send_success_email(
+        "Homily Upload Email Preview",
+        plain_message,
+        html_message=html_message,
+        inline_images=[inline_cover_image] if inline_cover_image else None,
+        email_to=email_to,
+    )
 
 
 def upload_latest_homily():

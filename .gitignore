@@ -19,6 +19,8 @@ homilies.db
 downloads/
 local_dir/
 temp/
+speaker_samples/
+models/
 
 # OS-specific files
 .DS_Store

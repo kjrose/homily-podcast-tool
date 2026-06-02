@@ -12,6 +12,7 @@ from io import BytesIO
 from .config_loader import CFG
 from .email_utils import send_email_alert
 from .database import insert_homily  # Use insert_homily
+from .speaker_utils import resolve_homilist
 
 # Configure logging (reusing the logger from main.py)
 logger = logging.getLogger('HomilyMonitor')
@@ -48,6 +49,23 @@ IMAGE_QUALITY_GUIDANCE = (
 )
 
 HOMILY_IMAGE_TRANSCRIPT_CHAR_LIMIT = 4000
+
+
+def _find_homilist_audio_path(path):
+    candidate = str(path or "").strip()
+    if not candidate:
+        return None
+
+    if os.path.isfile(candidate) and candidate.lower().endswith((".mp3", ".wav", ".m4a")):
+        return candidate
+
+    root, ext = os.path.splitext(candidate)
+    if ext.lower() == ".txt":
+        mp3_candidate = f"{root}.mp3"
+        if os.path.isfile(mp3_candidate):
+            return mp3_candidate
+
+    return None
 
 
 def request_text_completion(prompt, temperature=0.5, model=None):
@@ -130,6 +148,29 @@ def _finalize_image_prompt(prompt, title, description, homily_text=None):
 
 def analyze_transcript_with_gpt(mp3_path, transcript_text, last_mod):
     filename = os.path.basename(mp3_path)  # e.g., "Mass-2025-07-14_09-30.mp3"
+    homilist_audio_path = _find_homilist_audio_path(mp3_path)
+    homilist = resolve_homilist(homilist_audio_path) if homilist_audio_path else {
+        "name": "",
+        "confidence": None,
+        "source": "",
+        "fallback_label": "Homilist",
+        "threshold": 80,
+    }
+    confirmed_homilist_name = " ".join(str(homilist.get("name", "")).split()).strip()
+    homilist_confidence = homilist.get("confidence")
+
+    if confirmed_homilist_name:
+        homilist_prompt_guidance = (
+            f"A speaker-identification pass matched the homilist as '{confirmed_homilist_name}' "
+            f"with confidence {homilist_confidence} out of 100. Use that name naturally when "
+            "referring to the preacher. Do not hedge or rename the person."
+        )
+    else:
+        homilist_prompt_guidance = (
+            "No homilist name was confirmed with sufficient confidence. Do not guess a person's name. "
+            "If the description needs to refer to the preacher, use neutral terms such as "
+            "'the homilist', 'the priest', or 'the deacon' based only on what the transcript itself supports."
+        )
     
     prompt = f"""
 You are a helpful Catholic Mass assistant.
@@ -141,6 +182,9 @@ For liturgical day: Calculate based on the date. If it's a Sunday, find the prop
 For liturgical year cycle: Sundays/solemnities use A/B/C (Year A if year % 3 == 2, B if 0, C if 1; but adjust for liturgical year starting in Advent previous year). Weekdays use Cycle I (odd calendar years) or II (even).
 
 Cross-reference with transcript content like readings to confirm.
+
+Homilist identification guidance:
+{homilist_prompt_guidance}
 
 Read the following transcript of a Catholic homily and respond with the following:
 
@@ -198,7 +242,19 @@ Respond using this JSON format:
         # Insert into DB
         date_str = date.strftime("%Y-%m-%d")
         logger.info(f"Inserting analysis for {mp3_path} into database with group_key {group_key}")
-        insert_homily(group_key, os.path.basename(mp3_path), date_str, result["title"], result["description"], result["special"], result["liturgical_day"], result["lit_year"])
+        insert_homily(
+            group_key,
+            os.path.basename(mp3_path),
+            date_str,
+            result["title"],
+            result["description"],
+            result["special"],
+            result["liturgical_day"],
+            result["lit_year"],
+            homilist_name=confirmed_homilist_name,
+            homilist_confidence=homilist_confidence,
+            homilist_source=homilist.get("source", ""),
+        )
         logger.info(f"Inserted analysis for {mp3_path} into database")
     except openai.OpenAIError as e:
         logger.error(f"OpenAI API error for {mp3_path}: {e}")

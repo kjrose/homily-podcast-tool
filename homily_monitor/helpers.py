@@ -7,11 +7,8 @@ import json
 import logging
 
 from homily_monitor.config_loader import CFG
-from .email_utils import send_email_alert
-from .gpt_utils import analyze_transcript_with_gpt
-from .audio_utils import extract_homily_from_vtt, run_batch_file 
-from .gpt_utils import DEVIATION_MODEL, request_text_completion
 from .database import get_conn
+from .email_utils import send_email_alert
 
 # Configure logging (reusing the logger from main.py)
 logger = logging.getLogger('HomilyMonitor')
@@ -71,6 +68,9 @@ def validate_and_get_transcript(transcript_path, mp3_path=None):
 
 
 def check_transcript(mp3_path, last_mod=None):
+    from .audio_utils import extract_homily_from_vtt
+    from .gpt_utils import analyze_transcript_with_gpt
+
     transcript_path = os.path.splitext(mp3_path)[0] + ".txt"
     logger.info(f"Checking transcript for {mp3_path}...")
     content = validate_and_get_transcript(transcript_path, mp3_path)
@@ -85,6 +85,8 @@ def check_transcript(mp3_path, last_mod=None):
 
 
 def analyze_latest_transcript():
+    from .gpt_utils import analyze_transcript_with_gpt
+
     logger.info("Analyzing latest transcript...")
     txt_files = [
         os.path.join(LOCAL_DIR, f)
@@ -123,6 +125,8 @@ def get_latest_mp3(directory):
 
 
 def extract_latest_homily():
+    from .audio_utils import extract_homily_from_vtt
+
     logger.info("Extracting latest homily...")
     latest = get_latest_mp3(LOCAL_DIR)
     if not latest:
@@ -134,6 +138,9 @@ def extract_latest_homily():
 
 
 def run_latest_test():
+    from .audio_utils import run_batch_file
+    from .gpt_utils import analyze_transcript_with_gpt
+
     logger.info("Running latest test...")
     latest = get_latest_mp3(LOCAL_DIR)
     if not latest:
@@ -152,12 +159,18 @@ def run_latest_test():
         analyze_transcript_with_gpt(latest, content, None)
 
 
-def test_email():
+def test_email(email_to=None):
     logger.info("Sending test alert email...")
-    send_email_alert("TEST-Mass.mp3", "This is a test of the transcript alert system.")
+    send_email_alert(
+        "TEST-Mass.mp3",
+        "This is a test of the transcript alert system.",
+        email_to=email_to,
+    )
 
 
 def check_for_completed_weekends():
+    from .gpt_utils import DEVIATION_MODEL, request_text_completion
+
     logger.info("Checking for completed weekends...")
     now = datetime.now(timezone.utc)
     conn = get_conn()

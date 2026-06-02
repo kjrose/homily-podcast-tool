@@ -50,7 +50,9 @@ python main.py
 ````   
 
 ### CLI Options
-- `--test`: Send a test email alert.
+- `--test`: Send the plain-text transcript alert test email.
+- `--test-upload-email`: Send a styled homily upload preview email with embedded details and inline cover art when image generation succeeds.
+- `--email-to`: Override the configured recipient for `--test` or `--test-upload-email`.
 - `--latest`: Process the latest MP3 (batch + GPT analysis).
 - `--analyze-latest`: Analyze the latest transcript.
 - `--extract-latest`: Extract homily from the latest MP3 + VTT.
@@ -63,6 +65,8 @@ python main.py
 
 Examples:
 ````bash
+python main.py --test-upload-email
+python main.py --test-upload-email --email-to you@example.com
 python main.py --retry-upload-date 2026-04-27
 python main.py --retry-upload-last-days 7
 python main.py --list-homilies-last-days 7
@@ -117,6 +121,24 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds.
   "church": {
     "timezone": "America/Edmonton"
   },
+  "speaker_identification": {
+    "enabled": false,
+    "provider": "speechbrain",
+    "model_source": "speechbrain/spkrec-ecapa-voxceleb",
+    "model_cache_dir": "./models/spkrec-ecapa-voxceleb",
+    "decision_threshold": 0.25,
+    "matching_threshold": 80,
+    "fallback_label": "Homilist",
+    "enrolled_speakers": [
+      {
+        "name": "Fr. Example",
+        "sample_paths": [
+          "./speaker_samples/fr-example-1.wav",
+          "./speaker_samples/fr-example-2.wav"
+        ]
+      }
+    ]
+  },
   "email": {
     "smtp_server": "smtp.gmail.com",
     "smtp_port": 587,
@@ -137,6 +159,8 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds.
 }
 ```
 
+If `speaker_identification.enabled` is `true`, the app will try to identify the homilist from the audio before generating the title and description. This path runs locally with SpeechBrain after the model is available on disk. The first load may download model files from Hugging Face unless `model_source` points to a local directory. Keep real sample clips out of tracked files unless they are intentionally public.
+
 ## 🛠️ Project Structure
 ````
 homily-podcast-tool/
@@ -150,6 +174,7 @@ homily-podcast-tool/
     ├── gpt_utils.py
     ├── helpers.py
     ├── s3_utils.py
+    ├── speaker_utils.py
     ├── wordpress_utils.py
 ├── LICENSE
 ├── main.py  # Entry point

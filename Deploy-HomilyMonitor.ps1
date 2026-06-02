@@ -11,7 +11,8 @@ param(
     [switch]$SkipBuild,
     [switch]$SkipServiceRestart,
     [switch]$SyncConfig,
-    [switch]$NoBackup
+    [switch]$NoBackup,
+    [switch]$ElevatedExecution
 )
 
 Set-StrictMode -Version Latest
@@ -106,10 +107,13 @@ function Start-SelfElevatedCopy {
         $argumentList += ('"{0}"' -f ([string]$value).Replace('"', '\"'))
     }
 
+    $argumentList += '-ElevatedExecution'
+
     Write-Step "Relaunching the deployment script as Administrator..."
+    Write-Step ("Elevation command: {0} {1}" -f $shellPath, ($argumentList -join ' '))
     try {
-        $env:DEPLOY_HOMILYMONITOR_ELEVATED = '1'
         $process = Start-Process -FilePath $shellPath -Verb RunAs -WorkingDirectory $WorkingDirectory -ArgumentList $argumentList -Wait -PassThru
+        Write-Step "Elevated process exit code: $($process.ExitCode)"
         if ($script:LogPath -and (Test-Path -LiteralPath $script:LogPath)) {
             Write-Host "[HomilyMonitor] Elevated run log: $script:LogPath"
             Get-Content -LiteralPath $script:LogPath -Tail 20 | ForEach-Object { Write-Host $_ }
@@ -118,9 +122,6 @@ function Start-SelfElevatedCopy {
     }
     catch {
         throw "Self-elevation failed or was cancelled. Run PowerShell as Administrator or allow the UAC prompt."
-    }
-    finally {
-        $env:DEPLOY_HOMILYMONITOR_ELEVATED = $null
     }
 }
 
@@ -155,6 +156,62 @@ function Resolve-PythonExecutable {
     }
 
     throw "Could not resolve a Python executable. Pass -PythonExe explicitly."
+}
+
+function Get-NormalizedPackageVersion {
+    param([string]$Version)
+
+    if (-not $Version) {
+        return $null
+    }
+
+    return (($Version -split '\+')[0]).Trim()
+}
+
+function Assert-PythonBuildDependencies {
+    param([string]$TargetPythonExe)
+
+    $versionProbe = @'
+import json
+from importlib.metadata import PackageNotFoundError, version
+
+packages = {}
+for name in ("torch", "torchaudio", "speechbrain"):
+    try:
+        packages[name] = version(name)
+    except PackageNotFoundError:
+        packages[name] = None
+
+print(json.dumps(packages))
+'@
+
+    $probeOutput = & $TargetPythonExe -c $versionProbe
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not inspect Python package versions needed for deployment."
+    }
+
+    $packageVersions = $probeOutput | ConvertFrom-Json
+    $torchVersion = Get-NormalizedPackageVersion -Version $packageVersions.torch
+    $torchaudioVersion = Get-NormalizedPackageVersion -Version $packageVersions.torchaudio
+
+    if ($torchVersion -and $torchaudioVersion -and $torchVersion -ne $torchaudioVersion) {
+        throw (
+            "Installed Torch packages are incompatible for deployment: torch {0}, torchaudio {1}. " +
+            "Install matching versions before rerunning deploy. For this repository, use: " +
+            "pip install torch==2.11.0 torchaudio==2.11.0"
+        ) -f $packageVersions.torch, $packageVersions.torchaudio
+    }
+
+    if ($packageVersions.speechbrain -and (-not $torchVersion -or -not $torchaudioVersion)) {
+        throw (
+            "speechbrain {0} is installed, but torch/torchaudio is incomplete: torch={1}, torchaudio={2}. " +
+            "Install the missing package(s) before rerunning deploy."
+        ) -f $packageVersions.speechbrain, $packageVersions.torch, $packageVersions.torchaudio
+    }
+
+    if ($torchVersion -and $torchaudioVersion) {
+        Write-Step "Verified Torch package compatibility: torch $($packageVersions.torch), torchaudio $($packageVersions.torchaudio)"
+    }
 }
 
 function Get-ServiceExecutablePath {
@@ -404,8 +461,7 @@ $script:RelaunchParameters = @{} + $script:OriginalScriptBoundParameters
 if (-not $script:RelaunchParameters.ContainsKey('LogPath')) {
     $script:RelaunchParameters['LogPath'] = $LogPath
 }
-$script:ElevatedExecution = ($env:DEPLOY_HOMILYMONITOR_ELEVATED -eq '1')
-$env:DEPLOY_HOMILYMONITOR_ELEVATED = $null
+$script:ElevatedExecution = $ElevatedExecution.IsPresent
 
 $installInfo = Get-ServiceInstallInfo -TargetServiceName $ServiceName
 if ($installInfo) {
@@ -421,6 +477,7 @@ if ($requiresElevation -and -not (Test-IsAdministrator)) {
 }
 
 $python = Resolve-PythonExecutable -RequestedPath $PythonExe -RootPath $ProjectRoot
+Assert-PythonBuildDependencies -TargetPythonExe $python
 
 Write-Step "Project root: $ProjectRoot"
 Write-Step "Spec file: $SpecPath"

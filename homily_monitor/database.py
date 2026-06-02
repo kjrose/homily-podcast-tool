@@ -35,6 +35,9 @@ def get_conn():
                 title TEXT,
                 description TEXT,
                 special TEXT,
+                homilist_name TEXT DEFAULT '',
+                homilist_confidence REAL,
+                homilist_source TEXT DEFAULT '',
                 processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
             """)
@@ -57,6 +60,18 @@ def get_conn():
             if 'lit_year' not in columns:
                 logger.info("Adding lit_year column to homilies table...")
                 cursor.execute("ALTER TABLE homilies ADD COLUMN lit_year TEXT DEFAULT ''")
+
+            if 'homilist_name' not in columns:
+                logger.info("Adding homilist_name column to homilies table...")
+                cursor.execute("ALTER TABLE homilies ADD COLUMN homilist_name TEXT DEFAULT ''")
+
+            if 'homilist_confidence' not in columns:
+                logger.info("Adding homilist_confidence column to homilies table...")
+                cursor.execute("ALTER TABLE homilies ADD COLUMN homilist_confidence REAL")
+
+            if 'homilist_source' not in columns:
+                logger.info("Adding homilist_source column to homilies table...")
+                cursor.execute("ALTER TABLE homilies ADD COLUMN homilist_source TEXT DEFAULT ''")
             
             CONN.commit()
             logger.info(f"Database connection established and schema updated for {DB_PATH}")
@@ -70,15 +85,51 @@ def get_conn():
     return CONN
 
 
-def insert_homily(group_key, filename, date, title, description, special, liturgical_day='', lit_year=''):
+def insert_homily(
+    group_key,
+    filename,
+    date,
+    title,
+    description,
+    special,
+    liturgical_day='',
+    lit_year='',
+    homilist_name='',
+    homilist_confidence=None,
+    homilist_source='',
+):
     try:
         conn = get_conn()
         cursor = conn.cursor()
         logger.info(f"Inserting homily: {filename} with group_key {group_key}")
         cursor.execute("""
-            INSERT INTO homilies (group_key, filename, date, title, description, special, liturgical_day, lit_year)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (group_key, filename, date, title, description, special, liturgical_day, lit_year))
+            INSERT INTO homilies (
+                group_key,
+                filename,
+                date,
+                title,
+                description,
+                special,
+                liturgical_day,
+                lit_year,
+                homilist_name,
+                homilist_confidence,
+                homilist_source
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            group_key,
+            filename,
+            date,
+            title,
+            description,
+            special,
+            liturgical_day,
+            lit_year,
+            homilist_name,
+            homilist_confidence,
+            homilist_source,
+        ))
         conn.commit()
         logger.info(f"Successfully inserted homily: {filename}")
     except sqlite3.IntegrityError as e:
@@ -94,12 +145,45 @@ def get_latest_homily_analysis(filename):
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT title, description, special, liturgical_day, lit_year, date
+        SELECT
+            title,
+            description,
+            special,
+            liturgical_day,
+            lit_year,
+            date,
+            homilist_name,
+            homilist_confidence,
+            homilist_source
         FROM homilies
         WHERE filename = ?
         ORDER BY processed_at DESC, id DESC
         LIMIT 1
         """,
         (filename,),
+    )
+    return cursor.fetchone()
+
+
+def get_most_recent_homily_analysis():
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT
+            filename,
+            date,
+            title,
+            description,
+            special,
+            liturgical_day,
+            lit_year,
+            homilist_name,
+            homilist_confidence,
+            homilist_source
+        FROM homilies
+        ORDER BY processed_at DESC, id DESC
+        LIMIT 1
+        """
     )
     return cursor.fetchone()

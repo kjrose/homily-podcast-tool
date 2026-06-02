@@ -3,6 +3,7 @@
 import smtplib
 import time
 from email.message import EmailMessage
+from email.utils import make_msgid
 import logging
 
 from .config_loader import CFG
@@ -33,12 +34,64 @@ SMTP_RETRY_ATTEMPTS = int(_get_positive_number("smtp_retry_attempts", 2, int))
 SMTP_RETRY_DELAY_SECONDS = _get_positive_number("smtp_retry_delay_seconds", 2.0)
 
 
-def _send_email(subject, message, success_log_message, failure_log_context):
+def create_inline_image(data, subtype="png", filename="inline-image.png"):
+    cid = make_msgid()
+    return {
+        "data": data,
+        "maintype": "image",
+        "subtype": subtype,
+        "filename": filename,
+        "cid": cid,
+        "content_id": cid[1:-1],
+    }
+
+
+def _attach_inline_images(msg, inline_images):
+    if not inline_images:
+        return
+
+    html_part = None
+    for part in msg.iter_parts():
+        if part.get_content_type() == "text/html":
+            html_part = part
+            break
+
+    if html_part is None:
+        return
+
+    for image in inline_images:
+        data = image.get("data")
+        cid = image.get("cid")
+        if not data or not cid:
+            continue
+
+        html_part.add_related(
+            data,
+            maintype=image.get("maintype", "image"),
+            subtype=image.get("subtype", "png"),
+            cid=cid,
+            filename=image.get("filename"),
+            disposition="inline",
+        )
+
+
+def _send_email(
+    subject,
+    message,
+    success_log_message,
+    failure_log_context,
+    html_message=None,
+    inline_images=None,
+    email_to=None,
+):
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = EMAIL_FROM
-    msg["To"] = EMAIL_TO
+    msg["To"] = email_to or EMAIL_TO
     msg.set_content(message)
+    if html_message:
+        msg.add_alternative(html_message, subtype="html")
+        _attach_inline_images(msg, inline_images)
 
     for attempt in range(1, SMTP_RETRY_ATTEMPTS + 1):
         try:
@@ -62,13 +115,18 @@ def _send_email(subject, message, success_log_message, failure_log_context):
             time.sleep(SMTP_RETRY_DELAY_SECONDS * (2 ** (attempt - 1)))
 
 
-def send_email_alert(mp3_path, reason="The transcript appears to be missing or empty."):
+def send_email_alert(
+    mp3_path,
+    reason="The transcript appears to be missing or empty.",
+    email_to=None,
+):
     message = f"Problem with transcript for:\n\n{mp3_path}\n\nReason: {reason}"
     return _send_email(
         EMAIL_SUBJECT,
         message,
         f"Alert email sent for {mp3_path}",
         f"alert email for {mp3_path}",
+        email_to=email_to,
     )
 
 
@@ -90,10 +148,13 @@ def send_deviation_email(group_key, summary, details):
     )
 
 
-def send_success_email(subject, message):
+def send_success_email(subject, message, html_message=None, inline_images=None, email_to=None):
     return _send_email(
         subject,
         message,
         f"Success email sent: {subject}",
         f"success email for {subject}",
+        html_message=html_message,
+        inline_images=inline_images,
+        email_to=email_to,
     )
