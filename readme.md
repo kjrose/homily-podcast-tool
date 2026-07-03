@@ -37,6 +37,11 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ````
 
+For local Whisper transcription or SpeechBrain speaker identification, also install:
+````bash
+pip install -r requirements-local-ml.txt
+````
+
 4. **Configure**:
 Copy `config.json.sample` to `config.json` and fill in your details (API keys, paths, church timezone, etc.). Set `paths.ffmpeg` if FFmpeg is not already available on your PATH. Optional runtime environment values can be placed in a local `.env` file; `.env` is ignored by git.
 
@@ -160,7 +165,7 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds. It d
 }
 ```
 
-If `speaker_identification.enabled` is `true`, the app will try to identify the homilist from the audio before generating the title and description. This path runs locally with SpeechBrain after the model is available on disk. The first load may download model files from Hugging Face unless `model_source` points to a local directory. Keep real sample clips out of tracked files unless they are intentionally public.
+If `speaker_identification.enabled` is `true`, the app will try to identify the homilist from the audio before generating the title and description. This path requires the optional local ML dependencies in `requirements-local-ml.txt` and runs locally with SpeechBrain after the model is available on disk. The first load may download model files from Hugging Face unless `model_source` points to a local directory. Keep real sample clips out of tracked files unless they are intentionally public.
 
 ### Remote Whisper Transcription
 
@@ -201,6 +206,7 @@ homily-podcast-tool/
 ├── main.py  # Entry point
 ├── README.md
 ├── requirements.txt
+├── requirements-local-ml.txt
 ├── TranscribeHomilies.bat
 └── TranscribeWildcard.bat
 ````
@@ -256,7 +262,7 @@ homilymonitor_service.exe uninstall
 This setup ensures your homily monitoring tool runs continuously in the background, automatically processing new recordings as they are uploaded to S3.
 
 ## Transcription
-The tool can use a remote Whisper API when `WHISPER_API_URL` is set in `.env`. Without that environment variable, it falls back to the configured local batch file. Place local batch files in the project directory alongside main.py.
+The tool can use a remote Whisper API when `WHISPER_API_URL` is set in `.env`. Without that environment variable, it falls back to the configured local batch file. Local Whisper batch transcription requires `requirements-local-ml.txt`; place local batch files in the project directory alongside main.py.
 
 ## 🤝 Contributing
 1. Fork the repository.
