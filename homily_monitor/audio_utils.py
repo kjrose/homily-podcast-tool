@@ -5,10 +5,14 @@ import re
 import subprocess
 import json
 import shutil
+import time
 from collections import deque
 import logging
+from urllib.parse import urlencode
 
+import requests
 from .config_loader import CFG
+from . import log_utils
 from .email_utils import send_email_alert
 from .gpt_utils import VTT_FALLBACK_MODEL, request_text_completion
 from pydub import AudioSegment
@@ -18,6 +22,75 @@ logger = logging.getLogger('HomilyMonitor')
 
 BATCH_FILE = CFG["paths"]["batch_file"]
 _FFMPEG_BINARY = None
+BATCH_MEMORY_LOG_INTERVAL_SECONDS = 60
+BATCH_OUTPUT_TAIL_CHARS = 4000
+REMOTE_WHISPER_DOWNLOAD_FORMATS = ("vtt", "srt", "tsv")
+
+
+class RemoteWhisperError(RuntimeError):
+    pass
+
+
+def _env_value(*names):
+    for name in names:
+        value = os.environ.get(name)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _env_positive_float(default, *names):
+    raw_value = _env_value(*names)
+    if not raw_value:
+        return default
+    try:
+        parsed = float(raw_value)
+    except ValueError:
+        logger.warning(f"Invalid {names[0]} value '{raw_value}'; using {default}.")
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _configured_remote_whisper_url():
+    api_url = _env_value("WHISPER_API_URL", "REMOTE_WHISPER_API_URL")
+    if api_url:
+        return api_url
+
+    base_url = _env_value("WHISPER_API_BASE_URL", "REMOTE_WHISPER_API_BASE_URL")
+    if base_url:
+        if base_url.rstrip("/").lower().endswith("/api.php"):
+            return base_url.rstrip("/")
+        return f"{base_url.rstrip('/')}/api.php"
+
+    return ""
+
+
+def _remote_whisper_poll_interval_seconds():
+    return _env_positive_float(
+        3.0,
+        "WHISPER_API_POLL_INTERVAL_SECONDS",
+        "REMOTE_WHISPER_POLL_INTERVAL_SECONDS",
+    )
+
+
+def _remote_whisper_timeout_seconds():
+    return _env_positive_float(
+        60.0,
+        "WHISPER_API_TIMEOUT_SECONDS",
+        "REMOTE_WHISPER_TIMEOUT_SECONDS",
+    )
+
+
+def _remote_whisper_max_wait_seconds():
+    return _env_positive_float(
+        3600.0,
+        "WHISPER_API_MAX_WAIT_SECONDS",
+        "REMOTE_WHISPER_MAX_WAIT_SECONDS",
+    )
+
+
+def is_remote_whisper_enabled():
+    return bool(_configured_remote_whisper_url())
 
 
 def _ffmpeg_candidates():
@@ -71,6 +144,353 @@ def ensure_parent_dir(path):
     parent_dir = os.path.dirname(path)
     if parent_dir:
         os.makedirs(parent_dir, exist_ok=True)
+
+
+def _safe_log_stem(path):
+    stem = os.path.splitext(os.path.basename(path))[0]
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("_") or "batch"
+
+
+def _batch_output_log_path(file_path):
+    log_dir = log_utils.ensure_log_dir()
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    return log_dir / f"batch_{_safe_log_stem(file_path)}_{timestamp}.log"
+
+
+def _read_tail_text(path, max_chars=BATCH_OUTPUT_TAIL_CHARS):
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - (max_chars * 4)))
+            text = handle.read().decode("utf-8", errors="replace")
+        if len(text) > max_chars:
+            text = text[-max_chars:]
+        return text.strip()
+    except OSError as exc:
+        return f"Could not read batch output log {path}: {exc}"
+
+
+def _run_batch_process(batch_file, file_path, env):
+    if not os.path.exists(batch_file):
+        raise FileNotFoundError(f"Batch file not found: {batch_file}")
+
+    output_log_path = _batch_output_log_path(file_path)
+    logger.info(f"Batch output will be written to {output_log_path}")
+    log_utils.log_memory_snapshot(logger, f"before batch for {os.path.basename(file_path)}")
+
+    command = ["cmd.exe", "/d", "/c", "call", batch_file, file_path]
+    with open(output_log_path, "ab", buffering=0) as output_log:
+        output_log.write(
+            f"Command: {subprocess.list2cmdline(command)}\n".encode("utf-8", errors="replace")
+        )
+        process = subprocess.Popen(
+            command,
+            stdout=output_log,
+            stderr=subprocess.STDOUT,
+            env=env,
+        )
+
+        last_memory_log = time.monotonic()
+        while True:
+            return_code = process.poll()
+            if return_code is not None:
+                break
+
+            now = time.monotonic()
+            if now - last_memory_log >= BATCH_MEMORY_LOG_INTERVAL_SECONDS:
+                log_utils.log_memory_snapshot(
+                    logger,
+                    f"batch running for {os.path.basename(file_path)}",
+                    include_tree_pids=[process.pid],
+                )
+                last_memory_log = now
+            time.sleep(5)
+
+    log_utils.log_memory_snapshot(
+        logger,
+        f"after batch for {os.path.basename(file_path)}",
+        include_tree_pids=[process.pid],
+    )
+    return return_code, output_log_path
+
+
+def _json_response(response, operation):
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise RemoteWhisperError(f"Remote Whisper {operation} returned non-JSON response.") from exc
+
+    if not isinstance(data, dict):
+        raise RemoteWhisperError(f"Remote Whisper {operation} returned an unexpected response.")
+
+    if data.get("success") is False:
+        message = data.get("error") or data.get("message") or "unknown error"
+        raise RemoteWhisperError(f"Remote Whisper {operation} failed: {message}")
+
+    return data
+
+
+def _ticket_status_url(api_url, ticket):
+    separator = "&" if "?" in api_url else "?"
+    return f"{api_url}{separator}{urlencode({'ticket': ticket})}"
+
+
+def _format_vtt_timestamp(seconds):
+    seconds = max(0.0, float(seconds or 0.0))
+    whole_seconds = int(seconds)
+    milliseconds = int(round((seconds - whole_seconds) * 1000))
+    if milliseconds == 1000:
+        whole_seconds += 1
+        milliseconds = 0
+
+    hours = whole_seconds // 3600
+    minutes = (whole_seconds % 3600) // 60
+    remaining_seconds = whole_seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{remaining_seconds:02d}.{milliseconds:03d}"
+
+
+def _format_srt_timestamp(seconds):
+    return _format_vtt_timestamp(seconds).replace(".", ",")
+
+
+def _segment_seconds(segment, key):
+    try:
+        return float(segment.get(key, 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _segment_text(segment):
+    return " ".join(str(segment.get("text", "")).split())
+
+
+def _remote_output_path(mp3_path, extension):
+    return os.path.splitext(mp3_path)[0] + extension
+
+
+def _write_text_file(path, content):
+    ensure_parent_dir(path)
+    with open(path, "w", encoding="utf-8", newline="\n") as output_file:
+        output_file.write(content)
+
+
+def _write_transcript_txt(mp3_path, segments):
+    transcript_lines = [_segment_text(segment) for segment in segments]
+    transcript = "\n".join(line for line in transcript_lines if line).strip()
+    if not transcript:
+        raise RemoteWhisperError("Remote Whisper completed without transcript text.")
+
+    output_path = _remote_output_path(mp3_path, ".txt")
+    _write_text_file(output_path, transcript + "\n")
+    logger.info(f"Wrote remote Whisper TXT transcript to {output_path}")
+
+
+def _write_vtt_from_segments(mp3_path, segments):
+    lines = ["WEBVTT", ""]
+    cue_count = 0
+    for segment in segments:
+        text = _segment_text(segment)
+        if not text:
+            continue
+        start = _segment_seconds(segment, "start")
+        end = _segment_seconds(segment, "end")
+        if end <= start:
+            continue
+
+        lines.extend([
+            f"{_format_vtt_timestamp(start)} --> {_format_vtt_timestamp(end)}",
+            text,
+            "",
+        ])
+        cue_count += 1
+
+    if cue_count == 0:
+        raise RemoteWhisperError("Remote Whisper completed without usable timestamped segments.")
+
+    output_path = _remote_output_path(mp3_path, ".vtt")
+    _write_text_file(output_path, "\n".join(lines))
+    logger.info(f"Wrote remote Whisper VTT transcript to {output_path}")
+
+
+def _write_srt_from_segments(mp3_path, segments):
+    lines = []
+    cue_number = 1
+    for segment in segments:
+        text = _segment_text(segment)
+        if not text:
+            continue
+        start = _segment_seconds(segment, "start")
+        end = _segment_seconds(segment, "end")
+        if end <= start:
+            continue
+
+        lines.extend([
+            str(cue_number),
+            f"{_format_srt_timestamp(start)} --> {_format_srt_timestamp(end)}",
+            text,
+            "",
+        ])
+        cue_number += 1
+
+    if lines:
+        output_path = _remote_output_path(mp3_path, ".srt")
+        _write_text_file(output_path, "\n".join(lines))
+        logger.info(f"Wrote remote Whisper SRT transcript to {output_path}")
+
+
+def _write_tsv_from_segments(mp3_path, segments):
+    rows = ["start\tend\ttext"]
+    for segment in segments:
+        text = _segment_text(segment)
+        if not text:
+            continue
+        rows.append(
+            f"{_segment_seconds(segment, 'start'):.3f}\t"
+            f"{_segment_seconds(segment, 'end'):.3f}\t"
+            f"{text}"
+        )
+
+    if len(rows) > 1:
+        output_path = _remote_output_path(mp3_path, ".tsv")
+        _write_text_file(output_path, "\n".join(rows) + "\n")
+        logger.info(f"Wrote remote Whisper TSV transcript to {output_path}")
+
+
+def _write_json_from_segments(mp3_path, result):
+    segments = result.get("transcript") or []
+    payload = {
+        "ticket": result.get("ticket"),
+        "status": result.get("status"),
+        "filename": result.get("filename"),
+        "created": result.get("created"),
+        "completed": result.get("completed"),
+        "transcript": segments,
+    }
+    output_path = _remote_output_path(mp3_path, ".json")
+    ensure_parent_dir(output_path)
+    with open(output_path, "w", encoding="utf-8", newline="\n") as output_file:
+        json.dump(payload, output_file, ensure_ascii=True, indent=2)
+        output_file.write("\n")
+    logger.info(f"Wrote remote Whisper JSON transcript to {output_path}")
+
+
+def _write_remote_transcript_outputs(mp3_path, result):
+    segments = result.get("transcript")
+    if not isinstance(segments, list):
+        raise RemoteWhisperError("Remote Whisper completed without a transcript segment list.")
+
+    _write_transcript_txt(mp3_path, segments)
+    _write_vtt_from_segments(mp3_path, segments)
+    _write_srt_from_segments(mp3_path, segments)
+    _write_tsv_from_segments(mp3_path, segments)
+    _write_json_from_segments(mp3_path, result)
+
+
+def _download_remote_transcript_formats(mp3_path, result):
+    downloads = result.get("downloads") or {}
+    if not isinstance(downloads, dict):
+        return
+
+    timeout = _remote_whisper_timeout_seconds()
+    for output_format in REMOTE_WHISPER_DOWNLOAD_FORMATS:
+        download_url = str(downloads.get(output_format) or "").strip()
+        if not download_url:
+            continue
+
+        try:
+            response = requests.get(download_url, timeout=timeout)
+            response.raise_for_status()
+            output_path = _remote_output_path(mp3_path, f".{output_format}")
+            ensure_parent_dir(output_path)
+            with open(output_path, "wb") as output_file:
+                output_file.write(response.content)
+            logger.info(f"Downloaded remote Whisper {output_format.upper()} transcript to {output_path}")
+        except requests.exceptions.RequestException as exc:
+            logger.warning(
+                f"Could not download remote Whisper {output_format.upper()} transcript "
+                f"for {mp3_path}; using generated local file when available: {exc}"
+            )
+
+
+def _submit_remote_whisper_job(file_path, api_url):
+    timeout = _remote_whisper_timeout_seconds()
+    with open(file_path, "rb") as audio_file:
+        files = {
+            "file": (os.path.basename(file_path), audio_file, "audio/mpeg"),
+        }
+        response = requests.post(api_url, files=files, timeout=timeout)
+    response.raise_for_status()
+    data = _json_response(response, "submit")
+
+    ticket = str(data.get("ticket") or "").strip()
+    status_url = str(data.get("url") or "").strip()
+    if not ticket:
+        raise RemoteWhisperError("Remote Whisper submit response did not include a ticket.")
+    if not status_url:
+        status_url = _ticket_status_url(api_url, ticket)
+
+    logger.info(f"Remote Whisper transcription submitted with ticket {ticket}.")
+    return ticket, status_url
+
+
+def _poll_remote_whisper_job(status_url, ticket):
+    timeout = _remote_whisper_timeout_seconds()
+    poll_interval = _remote_whisper_poll_interval_seconds()
+    max_wait = _remote_whisper_max_wait_seconds()
+    deadline = time.monotonic() + max_wait
+    last_status = None
+
+    while True:
+        response = requests.get(status_url, timeout=timeout)
+        response.raise_for_status()
+        data = _json_response(response, "status check")
+        status = str(data.get("status") or "").strip().lower()
+
+        if status == "completed":
+            logger.info(f"Remote Whisper transcription completed for ticket {ticket}.")
+            return data
+        if status == "failed":
+            error = data.get("error") or "Transcription failed."
+            raise RemoteWhisperError(f"Remote Whisper transcription failed for ticket {ticket}: {error}")
+        if status not in {"pending", "processing"}:
+            raise RemoteWhisperError(
+                f"Remote Whisper returned unexpected status '{status}' for ticket {ticket}."
+            )
+
+        if status != last_status:
+            logger.info(f"Remote Whisper transcription {ticket} is {status}.")
+            last_status = status
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RemoteWhisperError(
+                f"Remote Whisper transcription timed out after {max_wait:.0f} seconds for ticket {ticket}."
+            )
+        time.sleep(min(poll_interval, remaining))
+
+
+def _run_remote_whisper_transcription(file_path, api_url):
+    try:
+        logger.info(f"Submitting {file_path} to remote Whisper API for transcription...")
+        ticket, status_url = _submit_remote_whisper_job(file_path, api_url)
+        result = _poll_remote_whisper_job(status_url, ticket)
+        _write_remote_transcript_outputs(file_path, result)
+        _download_remote_transcript_formats(file_path, result)
+        return True
+    except requests.exceptions.RequestException as exc:
+        logger.error(f"Remote Whisper API request failed for {file_path}: {exc}")
+        send_email_alert(file_path, f"Remote Whisper API request failed:\n\n{exc}")
+        return False
+    except RemoteWhisperError as exc:
+        logger.error(f"Remote Whisper transcription failed for {file_path}: {exc}")
+        send_email_alert(file_path, f"Remote Whisper transcription failed:\n\n{exc}")
+        return False
+    except Exception as exc:
+        logger.error(f"Unexpected remote Whisper error for {file_path}: {exc}")
+        send_email_alert(file_path, f"Unexpected remote Whisper error:\n\n{exc}")
+        return False
+
 
 def normalize_audio(mp3_path, output_path=None):
     """Normalize audio using FFmpeg loudnorm to -23 LUFS."""
@@ -270,7 +690,7 @@ def trim_excess_silence(mp3_path, max_silence_sec=1.0, silence_thresh_dB=-40):
         send_email_alert(mp3_path, f"Unexpected silence trim error:\n\n{e}")
 
 def run_batch_file(file_path, batch_file=BATCH_FILE):
-    """Run the batch file on the given file path, after normalizing audio."""
+    """Transcribe the given file after normalizing audio."""
     # Normalize audio first
     normalized_path = os.path.splitext(file_path)[0] + "_normalized.mp3"
     if not normalize_audio(file_path, normalized_path):
@@ -288,35 +708,39 @@ def run_batch_file(file_path, batch_file=BATCH_FILE):
         os.replace(normalized_path, file_path)
         logger.info(f"Success: Replaced {file_path} with normalized version")
 
+    remote_whisper_url = _configured_remote_whisper_url()
+    if remote_whisper_url:
+        logger.info("Remote Whisper API is configured; using it instead of the local batch file.")
+        return _run_remote_whisper_transcription(file_path, remote_whisper_url)
+
     try:
         logger.info(f"Running batch file on {file_path}...")
         # Set env for UTF-8 to avoid encoding issues in child Python processes
         env = os.environ.copy()
         env['PYTHONIOENCODING'] = 'utf-8'
-        # Capture output with UTF-8 encoding
-        logger.info(f"Executing exact command: \"{batch_file}\" \"{file_path}\"")
-        result = subprocess.run(
-            f'"{batch_file}" "{file_path}"',
-            shell=True,
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding='utf-8',
-            env=env  # Pass the modified env
+        logger.info(
+            "Executing exact command: "
+            f"{subprocess.list2cmdline(['cmd.exe', '/d', '/c', 'call', batch_file, file_path])}"
         )
-        logger.debug(f"Batch output: {result.stdout}")
-        if result.stderr:
-            logger.warning(f"Batch errors: {result.stderr}")
+        return_code, output_log_path = _run_batch_process(batch_file, file_path, env)
+        if return_code != 0:
+            output_tail = _read_tail_text(output_log_path)
+            logger.error(
+                f"Error: Batch file failed with return code {return_code} for {file_path}. "
+                f"See {output_log_path}"
+            )
+            send_email_alert(
+                file_path,
+                f"Batch file execution failed with return code {return_code}.\n\n"
+                f"Output log: {output_log_path}\n\n"
+                f"Last output:\n{output_tail}",
+            )
+            if os.path.exists(normalized_path):
+                os.remove(normalized_path)  # Clean up on failure
+            return False
         logger.info(f"Success: Batch file completed.")
         return True
         
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Error: Batch file failed with return code {e.returncode} for {file_path}: {e.stderr}")
-        send_email_alert(file_path, f"Batch file execution failed:\n\n{e.stderr}")
-        if os.path.exists(normalized_path):
-            os.remove(normalized_path)  # Clean up on failure
-        return False
     except FileNotFoundError:
         logger.error(f"Error: Batch file {batch_file} not found for {file_path}")
         send_email_alert(file_path, "Batch file is missing.")

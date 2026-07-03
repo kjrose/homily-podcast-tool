@@ -1,12 +1,12 @@
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param(
     [string]$ServiceName = 'homilymonitor',
-    [string]$ProjectRoot = $PSScriptRoot,
-    [string]$SpecPath = (Join-Path $PSScriptRoot 'homilymonitor.spec'),
-    [string]$BuildOutputDir = (Join-Path $PSScriptRoot 'dist\homilymonitor'),
-    [string]$DeploymentDir = (Join-Path $PSScriptRoot 'homilymonitorservice'),
+    [string]$ProjectRoot,
+    [string]$SpecPath,
+    [string]$BuildOutputDir,
+    [string]$DeploymentDir,
     [string]$PythonExe,
-    [string]$BackupRoot = (Join-Path $PSScriptRoot 'deploy-backups'),
+    [string]$BackupRoot,
     [string]$LogPath,
     [switch]$SkipBuild,
     [switch]$SkipServiceRestart,
@@ -21,6 +21,28 @@ $script:OriginalScriptBoundParameters = @{} + $PSBoundParameters
 $script:LogPath = $null
 $script:RelaunchParameters = @{}
 $script:ElevatedExecution = $false
+$resolvedScriptRoot = $PSScriptRoot
+if (-not $resolvedScriptRoot -and $PSCommandPath) {
+    $resolvedScriptRoot = Split-Path -Parent $PSCommandPath
+}
+if (-not $resolvedScriptRoot -and $MyInvocation.MyCommand.Path) {
+    $resolvedScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+if (-not $resolvedScriptRoot) {
+    $resolvedScriptRoot = (Get-Location).Path
+}
+if (-not $ProjectRoot) {
+    $ProjectRoot = $resolvedScriptRoot
+}
+if (-not $SpecPath) {
+    $SpecPath = Join-Path $ProjectRoot 'homilymonitor.spec'
+}
+if (-not $DeploymentDir) {
+    $DeploymentDir = Join-Path $ProjectRoot 'homilymonitorservice'
+}
+if (-not $BackupRoot) {
+    $BackupRoot = Join-Path $ProjectRoot 'deploy-backups'
+}
 
 function Write-Step {
     param([string]$Message)
@@ -176,7 +198,7 @@ import json
 from importlib.metadata import PackageNotFoundError, version
 
 packages = {}
-for name in ("torch", "torchaudio", "speechbrain"):
+for name in ('torch', 'torchaudio', 'speechbrain'):
     try:
         packages[name] = version(name)
     except PackageNotFoundError:
@@ -471,13 +493,15 @@ if ($installInfo -and $installInfo.Manager -eq 'WinSW') {
     $DeploymentDir = $installInfo.BinaryDir
 }
 
-$requiresElevation = ($installInfo -ne $null) -and (-not $SkipServiceRestart) -and (-not $WhatIfPreference)
-if ($requiresElevation -and -not (Test-IsAdministrator)) {
-    Start-SelfElevatedCopy -WorkingDirectory $ProjectRoot
-}
+$python = $null
+if (-not $SkipBuild) {
+    if ((Test-IsAdministrator) -and (-not $ElevatedExecution.IsPresent) -and (-not $WhatIfPreference)) {
+        throw "Run deployment from a non-Administrator PowerShell. The script builds first, then self-elevates only for service updates."
+    }
 
-$python = Resolve-PythonExecutable -RequestedPath $PythonExe -RootPath $ProjectRoot
-Assert-PythonBuildDependencies -TargetPythonExe $python
+    $python = Resolve-PythonExecutable -RequestedPath $PythonExe -RootPath $ProjectRoot
+    Assert-PythonBuildDependencies -TargetPythonExe $python
+}
 
 Write-Step "Project root: $ProjectRoot"
 Write-Step "Spec file: $SpecPath"
@@ -485,7 +509,12 @@ Write-Step "Build output: $BuildOutputDir"
 Write-Step "PyInstaller dist dir: $pyInstallerDistDir"
 Write-Step "PyInstaller work dir: $pyInstallerWorkDir"
 Write-Step "Deployment directory: $DeploymentDir"
-Write-Step "Python executable: $python"
+if ($python) {
+    Write-Step "Python executable: $python"
+}
+else {
+    Write-Step "Python executable: not needed because build is skipped"
+}
 Write-Step "Deployment log: $LogPath"
 if ($installInfo) {
     Write-Step "Detected service manager: $($installInfo.Manager)"
@@ -515,9 +544,23 @@ if (-not $SkipBuild) {
         if (-not (Test-Path -LiteralPath $pyInstallerWorkDir)) {
             New-Item -ItemType Directory -Path $pyInstallerWorkDir -Force | Out-Null
         }
-        & $python -m PyInstaller --noconfirm --distpath $pyInstallerDistDir --workpath $pyInstallerWorkDir $SpecPath
-        if ($LASTEXITCODE -ne 0) {
-            throw "PyInstaller build failed with exit code $LASTEXITCODE."
+        $previousErrorActionPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            & $python -m PyInstaller --noconfirm --distpath $pyInstallerDistDir --workpath $pyInstallerWorkDir $SpecPath 2>&1 | ForEach-Object {
+                $line = [string]$_
+                Write-Host $line
+                if ($script:LogPath) {
+                    Add-Content -LiteralPath $script:LogPath -Value $line
+                }
+            }
+        }
+        finally {
+            $ErrorActionPreference = $previousErrorActionPreference
+        }
+        $pyInstallerExitCode = $LASTEXITCODE
+        if ($pyInstallerExitCode -ne 0) {
+            throw "PyInstaller build failed with exit code $pyInstallerExitCode."
         }
         $builtExe = Get-Item -LiteralPath (Join-Path $BuildOutputDir 'homilymonitor.exe')
         Write-Step "Build complete: $($builtExe.FullName) updated $($builtExe.LastWriteTime)"
@@ -532,6 +575,18 @@ if ($WhatIfPreference) {
 }
 else {
     Assert-BuildOutput -TargetBuildOutputDir $BuildOutputDir
+}
+
+$requiresElevation = ($installInfo -ne $null) -and (-not $SkipServiceRestart) -and (-not $WhatIfPreference)
+if ($requiresElevation -and -not (Test-IsAdministrator)) {
+    $script:RelaunchParameters['ProjectRoot'] = $ProjectRoot
+    $script:RelaunchParameters['SpecPath'] = $SpecPath
+    $script:RelaunchParameters['BuildOutputDir'] = $BuildOutputDir
+    $script:RelaunchParameters['DeploymentDir'] = $DeploymentDir
+    $script:RelaunchParameters['BackupRoot'] = $BackupRoot
+    $script:RelaunchParameters['LogPath'] = $LogPath
+    $script:RelaunchParameters['SkipBuild'] = [System.Management.Automation.SwitchParameter]::Present
+    Start-SelfElevatedCopy -WorkingDirectory $ProjectRoot
 }
 
 if ($SkipServiceRestart) {

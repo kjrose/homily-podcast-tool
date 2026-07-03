@@ -31,6 +31,34 @@ S3_BUCKET = CFG["s3"]["bucket"]
 S3_FOLDER = CFG["s3"]["folder"]
 ACCESS_KEY = CFG["s3"]["access_key"]
 SECRET_KEY = CFG["s3"]["secret_key"]
+DEFAULT_DOWNLOAD_LOOKBACK_HOURS = 48
+
+
+def _get_download_lookback_hours():
+    raw_value = CFG.get("s3", {}).get(
+        "download_lookback_hours",
+        DEFAULT_DOWNLOAD_LOOKBACK_HOURS,
+    )
+    try:
+        hours = int(raw_value)
+    except (TypeError, ValueError):
+        logger.warning(
+            f"Invalid s3.download_lookback_hours value '{raw_value}'; "
+            f"using {DEFAULT_DOWNLOAD_LOOKBACK_HOURS} hours."
+        )
+        return DEFAULT_DOWNLOAD_LOOKBACK_HOURS
+
+    if hours < 1:
+        logger.warning(
+            f"Invalid s3.download_lookback_hours value '{raw_value}'; "
+            f"using {DEFAULT_DOWNLOAD_LOOKBACK_HOURS} hours."
+        )
+        return DEFAULT_DOWNLOAD_LOOKBACK_HOURS
+
+    return hours
+
+
+DOWNLOAD_LOOKBACK_HOURS = _get_download_lookback_hours()
 
 # --- S3 CLIENT INIT ---
 from botocore.config import Config as BotoConfig
@@ -155,11 +183,18 @@ def list_s3_files():
     return files
 
 
-def is_file_within_last_48_hours(last_modified):
+def is_file_within_download_lookback(last_modified):
     now = datetime.now(timezone.utc)
-    result = (now - last_modified) <= timedelta(hours=48)
-    logger.debug(f"Checking if {last_modified} is within 48 hours: {result}")
+    result = (now - last_modified) <= timedelta(hours=DOWNLOAD_LOOKBACK_HOURS)
+    logger.debug(
+        f"Checking if {last_modified} is within configured S3 download lookback "
+        f"({DOWNLOAD_LOOKBACK_HOURS} hours): {result}"
+    )
     return result
+
+
+def is_file_within_last_48_hours(last_modified):
+    return is_file_within_download_lookback(last_modified)
 
 
 def download_file(s3_key, local_path):

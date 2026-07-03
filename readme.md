@@ -8,8 +8,8 @@ An efficient, automated tool for processing and sharing Catholic homilies. It do
 
 ## Features
 
-- **S3 Monitoring**: Automatically fetches recent Mass MP3s from S3 storage.
-- **Audio Processing**: Transcribes and extracts homily sections using FFmpeg and VTT analysis.
+- **S3 Monitoring**: Automatically fetches Mass MP3s from S3 storage within a configurable lookback window.
+- **Audio Processing**: Transcribes with a configurable remote Whisper API or local Whisper batch file, then extracts homily sections using FFmpeg and VTT analysis.
 - **AI Summarization**: Generates titles, descriptions, and context notes with OpenAI GPT-5.4.
 - **AI Cover Art**: Generates text-free podcast cover images with GPT Image 1.5, tuned for stronger homily alignment and higher visual quality.
 - **Log Retention**: Keeps 7 days of raw logs, compresses the next 21 days, and removes anything older.
@@ -38,7 +38,7 @@ pip install -r requirements.txt
 ````
 
 4. **Configure**:
-Copy `config.json.sample` to `config.json` and fill in your details (API keys, paths, church timezone, etc.). Set `paths.ffmpeg` if FFmpeg is not already available on your PATH.
+Copy `config.json.sample` to `config.json` and fill in your details (API keys, paths, church timezone, etc.). Set `paths.ffmpeg` if FFmpeg is not already available on your PATH. Optional runtime environment values can be placed in a local `.env` file; `.env` is ignored by git.
 
 5. **FFmpeg**: Ensure FFmpeg is installed and in your PATH. Download from [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html) or use Winget: `winget install Gyan.FFmpeg`.
 
@@ -72,7 +72,7 @@ python main.py --retry-upload-last-days 7
 python main.py --list-homilies-last-days 7
 ````
 
-The script runs in monitoring mode by default, polling S3 every 60 seconds.
+The script runs in monitoring mode by default, polling S3 every 60 seconds. It downloads `Mass-*.mp3` objects whose S3 `LastModified` timestamp is within `s3.download_lookback_hours`; set this to `168` for 7 days.
 
 ## Configuration
 
@@ -109,6 +109,7 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds.
     "endpoint": "https://s3.example.com",
     "bucket": "your-bucket",
     "folder": "masses/",
+    "download_lookback_hours": 168,
     "access_key": "...",
     "secret_key": "..."
   },
@@ -160,6 +161,26 @@ The script runs in monitoring mode by default, polling S3 every 60 seconds.
 ```
 
 If `speaker_identification.enabled` is `true`, the app will try to identify the homilist from the audio before generating the title and description. This path runs locally with SpeechBrain after the model is available on disk. The first load may download model files from Hugging Face unless `model_source` points to a local directory. Keep real sample clips out of tracked files unless they are intentionally public.
+
+### Remote Whisper Transcription
+
+By default, transcription uses the configured local batch file. To use an external Whisper server instead, create a local `.env` file and set:
+
+```text
+WHISPER_API_URL=https://your-whisper-server.example/api.php
+```
+
+When `WHISPER_API_URL` is present, the app posts the normalized MP3 to that endpoint, polls the returned ticket URL until completion, and writes the expected local transcript files next to the MP3 (`.txt`, `.vtt`, `.srt`, `.tsv`, `.json`). The `.txt` and `.vtt` files are what the downstream analysis and homily extraction steps require.
+
+Optional tuning values:
+
+```text
+WHISPER_API_POLL_INTERVAL_SECONDS=3
+WHISPER_API_TIMEOUT_SECONDS=60
+WHISPER_API_MAX_WAIT_SECONDS=3600
+```
+
+You can also set `WHISPER_API_BASE_URL=https://your-whisper-server.example`; the app will append `/api.php`. Legacy aliases with the `REMOTE_WHISPER_` prefix are also accepted.
 
 ## 🛠️ Project Structure
 ````
@@ -234,8 +255,8 @@ homilymonitor_service.exe uninstall
 
 This setup ensures your homily monitoring tool runs continuously in the background, automatically processing new recordings as they are uploaded to S3.
 
-## Batch Files for Transcription
-The tool uses batch files for transcribing MP3 files with Whisper. Place these in the project directory alongside main.py.
+## Transcription
+The tool can use a remote Whisper API when `WHISPER_API_URL` is set in `.env`. Without that environment variable, it falls back to the configured local batch file. Place local batch files in the project directory alongside main.py.
 
 ## 🤝 Contributing
 1. Fork the repository.

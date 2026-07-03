@@ -53,8 +53,8 @@ def main():
                 file_name = os.path.basename(s3_key)
                 local_path = os.path.join(CFG["paths"]["local_dir"], file_name)
 
-                if not s3_utils.is_file_within_last_48_hours(file["LastModified"]):
-                    logger.debug(f"Skipping {file_name}: Not within 48 hours or already downloaded.")
+                if not s3_utils.is_file_within_download_lookback(file["LastModified"]):
+                    logger.debug(f"Skipping {file_name}: Outside configured S3 download lookback.")
                     continue
                 if os.path.exists(local_path):
                     logger.debug(f"Skipping {file_name}: Already exists locally.")
