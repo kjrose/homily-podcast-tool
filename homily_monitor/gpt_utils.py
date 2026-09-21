@@ -220,13 +220,20 @@ Respond using this JSON format:
         result = json.loads(content)  # Validate JSON
         logger.info(f"Successfully parsed GPT response for {mp3_path}")
    
-        # Fallback for last_mod if not provided
-        if last_mod is None:
-            last_mod = datetime.fromtimestamp(os.path.getmtime(mp3_path), tz=timezone.utc)
-            logger.debug(f"Using file mtime {last_mod} as last_mod for {mp3_path}")
+        # The filename records the Mass's local time; modification timestamps
+        # can instead reflect when an old recording was copied or downloaded.
+        try:
+            if not filename.startswith("Mass-"):
+                raise ValueError("Missing Mass- prefix")
+            recorded_at = datetime.strptime(os.path.splitext(filename)[0][5:], "%Y-%m-%d_%H-%M")
+        except ValueError:
+            if last_mod is None:
+                last_mod = datetime.fromtimestamp(os.path.getmtime(mp3_path), tz=timezone.utc)
+            recorded_at = last_mod
+            logger.warning(f"Cannot read recording date from {filename}; using modification time {recorded_at}")
 
-        date = last_mod.date()
-        hour = last_mod.hour
+        date = recorded_at.date()
+        hour = recorded_at.hour
         if date.weekday() == 5:  # Saturday
             if hour >= 15:  # Assume Vigil if 3pm or later
                 sunday = date + timedelta(days=1)

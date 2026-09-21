@@ -942,6 +942,8 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         send_email_alert(homily_path, f"Failed to determine publish date for WordPress upload: {e}")
         return False
 
+    # Use the recording date even when cached analysis has a modification date.
+    date_str = publish_date_local[:10]
     full_title = _build_homily_full_title(title, lit_day, lit_year, date_str, homilist_name)
 
     content = description
