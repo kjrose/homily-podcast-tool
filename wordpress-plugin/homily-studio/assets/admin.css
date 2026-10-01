@@ -1,0 +1,22 @@
+#homily-studio { max-width: 1280px; }
+#homily-studio .nav-tab { cursor: pointer; }
+.hs-content { padding-top: 20px; }
+.hs-field { margin: 0 0 20px; }
+.hs-field > label { display: block; margin-bottom: 6px; font-weight: 600; }
+.hs-field input[type=text], .hs-field textarea { width: 100%; max-width: 900px; }
+.hs-field select { min-width: 220px; max-width: 100%; }
+.hs-field .description { max-width: 900px; }
+.hs-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 24px 0; }
+.hs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+.hs-card { background: #fff; border: 1px solid #c3c4c7; border-radius: 5px; padding: 20px; overflow-wrap: anywhere; }
+.hs-card h2 { margin-top: 0; }
+.hs-card a { display: block; margin-bottom: 14px; }
+.hs-lab-results { display: grid; grid-template-columns: repeat(2, minmax(280px, 1fr)); gap: 20px; margin-top: 24px; }
+#hs-jobs { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; }
+.hs-job { margin-bottom: 12px; }
+.hs-job button { text-align: left; white-space: normal; }
+.hs-preview-image { display: block; width: 100%; max-width: 600px; height: auto; margin-bottom: 20px; }
+.hs-card pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; background: #f6f7f7; padding: 12px; }
+.hs-card details { margin: 15px 0; }
+.hs-card summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 780px) { .hs-lab-results { grid-template-columns: 1fr; } }

@@ -82,6 +82,8 @@ def main():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Mass Downloader and Transcript Checker")
     group = parser.add_mutually_exclusive_group()
+    group.add_argument("--studio-worker", action="store_true", help="Run the private WordPress prompt preview worker")
+    group.add_argument("--studio-worker-once", action="store_true", help="Process one WordPress preview job and exit")
     group.add_argument("--test", action="store_true", help="Send the plain-text transcript alert test email")
     group.add_argument(
         "--test-upload-email",
@@ -116,7 +118,11 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    if args.test:
+    if args.studio_worker or args.studio_worker_once:
+        from homily_monitor.studio_worker import run_worker
+
+        run_worker(once=args.studio_worker_once)
+    elif args.test:
         from homily_monitor import helpers
 
         logger.info("Sending test email...")

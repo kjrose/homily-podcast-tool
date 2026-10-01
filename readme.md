@@ -212,6 +212,8 @@ homily-podcast-tool/
 ````
 
 ## Running as a Windows Service
+For WordPress-managed creative prompts and private previews, install the bundled **Homily Studio** plugin. Follow [WordPress setup](docs/wordpress-setup.md) and [editorial profiles](docs/editorial-profiles.md). Build its installable ZIP with `python tools/package_wordpress_plugin.py`. Each site supplies its own connection details; the plugin has no fixed parish connection.
+
 To run the tool constantly as a background service on Windows, use WinSW (Windows Service Wrapper) from https://github.com/winsw/winsw. WinSW allows wrapping your Python script in an EXE or running it directly as a service.
 Setup Steps
 
@@ -220,7 +222,7 @@ Setup Steps
 ````text
 pyinstaller --onedir --name homilymonitor --hidden-import boto3 --hidden-import botocore --hidden-import botocore.session --hidden-import requests --hidden-import openai --hidden-import openai.OpenAI --hidden-import sqlite3 --hidden-import pydub .\main.py
 ````
- * This generates homilymonitor.exe in the dist folder. Copy config.json to the dist directory alongside the EXE.
+ * This generates homilymonitor.exe in the dist folder. Copy config.json and homily_monitor/editorial-catalog.json to the dist directory alongside the EXE. The deployment script copies the public catalogue automatically.
 2. Download WinSW: Download the latest WinSW.exe from the releases page (e.g., WinSW-x64.exe) and rename it to something like homilymonitor_service.exe in your project directory.
 3. Create XML Configuration: Create a file named homilymonitor_service.xml in the same directory as the EXE, with the following content (adjust paths as needed):
 

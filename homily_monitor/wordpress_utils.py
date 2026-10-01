@@ -10,8 +10,10 @@ import logging
 import pytz
 import requests
 
-from .config_loader import CFG
-from .database import get_latest_homily_analysis, get_most_recent_homily_analysis
+from .config_loader import CFG, get_base_dir
+from .database import get_latest_homily_analysis, get_most_recent_homily_analysis, get_homily_editorial_profile
+from .editorial import context_for, render
+from .editorial_settings import get_editorial_profile, store_source_context
 from .email_utils import create_inline_image, send_email_alert, send_success_email
 from .speaker_utils import get_homilist_fallback_label
 
@@ -26,6 +28,16 @@ LOCAL_DIR = CFG["paths"]["local_dir"]
 CHURCH_CFG = CFG.get("church", {})
 NETWORK_CFG = CFG.get("network", {})
 WP_SESSION = requests.Session()
+WP_POST_REST_BASE = CFG["wordpress"].get("post_rest_base", "podcast")
+if not re.fullmatch(r"[a-z0-9_-]+", WP_POST_REST_BASE):
+    raise ValueError("wordpress.post_rest_base must be a REST collection name such as podcast or posts")
+WP_META_FIELDS = CFG["wordpress"].get("meta_fields", {
+    "audio": "audio_file", "cover_url": "cover_image", "cover_id": "cover_image_id",
+})
+if (not isinstance(WP_META_FIELDS, dict) or set(WP_META_FIELDS) - {"audio", "cover_url", "cover_id"}
+        or any(not isinstance(value, str) or not re.fullmatch(r"[a-zA-Z0-9_-]+", value)
+               for value in WP_META_FIELDS.values())):
+    raise ValueError("wordpress.meta_fields must map audio, cover_url, and cover_id to valid metadata keys")
 
 
 def _get_positive_number(name, default, cast=float):
@@ -231,6 +243,7 @@ def _build_homily_success_email_content(
     image_url="",
     preview_note="",
     edit_action_label="Edit Podcast",
+    email_intro="Successfully uploaded homily to WordPress as a draft:",
 ):
     formatted_date = _format_homily_date(date_str)
     safe_title = _one_line_text(title_text, full_title)
@@ -313,7 +326,7 @@ def _build_homily_success_email_content(
         )
 
     plain_lines = [
-        "Successfully uploaded homily to WordPress as a draft:",
+        email_intro,
         full_title,
     ]
     if safe_preview_note:
@@ -352,6 +365,7 @@ def _build_homily_success_email_content(
         "<tr>"
         '<td style="padding:24px;">'
         f"{preview_note_html}"
+        f'<p style="font-family:Arial,Helvetica,sans-serif;color:#5c3a17;">{escape(email_intro)}</p>'
         '<table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" '
         'style="width:100%; border-collapse:collapse;">'
         "<tr>"
@@ -414,7 +428,7 @@ def _recover_homily_transcript_excerpt(original_mp3_path, original_filename):
     return homily_transcript
 
 
-def _generate_podcast_image_if_available(title, description, homily_text=None):
+def _generate_podcast_image_if_available(title, description, homily_text=None, profile=None):
     try:
         from .gpt_utils import generate_podcast_image
     except ModuleNotFoundError as exc:
@@ -423,7 +437,7 @@ def _generate_podcast_image_if_available(title, description, homily_text=None):
         )
         return None
 
-    return generate_podcast_image(title, description, homily_text=homily_text)
+    return generate_podcast_image(title, description, homily_text=homily_text, profile=profile)
 
 
 def _fetch_wordpress_media_item(media_id):
@@ -452,7 +466,7 @@ def _fetch_wordpress_media_item(media_id):
 def _extract_cover_image_url_from_post(post):
     meta = post.get("meta", {})
     if isinstance(meta, dict):
-        cover_image = _one_line_text(meta.get("cover_image"), "")
+        cover_image = _one_line_text(meta.get(WP_META_FIELDS.get("cover_url", "")), "")
         if cover_image:
             return cover_image
 
@@ -469,7 +483,7 @@ def _extract_audio_url_from_post(post):
     meta = post.get("meta", {})
     if not isinstance(meta, dict):
         return ""
-    return _one_line_text(meta.get("audio_file"), "")
+    return _one_line_text(meta.get(WP_META_FIELDS.get("audio", "")), "")
 
 
 def _download_inline_image_from_url(image_url, filename="podcast_cover-preview.png"):
@@ -587,7 +601,7 @@ def _build_podcast_collection_params(page, status_mode="array"):
 
 
 def _fetch_recent_podcast_posts(oldest_date_gmt=None):
-    post_url = f"{WP_URL}/wp-json/wp/v2/podcast"
+    post_url = f"{WP_URL}/wp-json/wp/v2/{WP_POST_REST_BASE}"
     auth = (WP_USER, WP_APP_PASS)
     posts = []
     total_pages = 0
@@ -951,16 +965,18 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         content += f"\n\nSpecial context: {special}"
 
     media_url = f"{WP_URL}/wp-json/wp/v2/media"
-    post_url = f"{WP_URL}/wp-json/wp/v2/podcast"
+    post_url = f"{WP_URL}/wp-json/wp/v2/{WP_POST_REST_BASE}"
     auth = (WP_USER, WP_APP_PASS)
 
     homily_transcript = _recover_homily_transcript_excerpt(original_mp3_path, original_filename)
+    profile = get_homily_editorial_profile(filename) or get_editorial_profile()
 
     logger.info(f"Generating podcast image for {full_title}...")
     image_buffer = _generate_podcast_image_if_available(
         title,
         description,
         homily_text=homily_transcript,
+        profile=profile,
     )
     featured_media_id = None
     cover_image_url = None
@@ -1029,15 +1045,21 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         "status": "draft",
         "date": publish_date_local,
         "date_gmt": publish_date_utc,
-        "meta": {
-            "audio_file": audio_url
-        }
+        "meta": {}
     }
+    if WP_META_FIELDS.get("audio"):
+        post_data["meta"][WP_META_FIELDS["audio"]] = audio_url
+    else:
+        post_data["content"] += f'\n\n[audio src="{escape(audio_url, quote=True)}"]'
+    if CFG.get("homily_studio", {}).get("enabled", False):
+        post_data["homily_source_filename"] = original_filename
     if featured_media_id:
         post_data["featured_media"] = featured_media_id
     if cover_image_url and featured_media_id:
-        post_data["meta"]["cover_image"] = cover_image_url
-        post_data["meta"]["cover_image_id"] = str(featured_media_id)
+        if WP_META_FIELDS.get("cover_url"):
+            post_data["meta"][WP_META_FIELDS["cover_url"]] = cover_image_url
+        if WP_META_FIELDS.get("cover_id"):
+            post_data["meta"][WP_META_FIELDS["cover_id"]] = str(featured_media_id)
 
     try:
         response = _post_with_retries(
@@ -1056,6 +1078,10 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         return False
 
     response_json = response.json()
+    try:
+        store_source_context(CFG, get_base_dir(), original_filename, title, description, homily_transcript)
+    except OSError:
+        logger.warning("Could not save local context for future WordPress previews.")
     plain_message, html_message = _build_homily_success_email_content(
         title_text=title,
         full_title=full_title,
@@ -1064,9 +1090,12 @@ def upload_to_wordpress(homily_path, original_mp3_path):
         edit_url=f"{WP_URL}/wp-admin/post.php?post={response_json['id']}&action=edit",
         date_str=date_str,
         image_content_id=inline_cover_image["content_id"] if inline_cover_image else None,
+        email_intro=render(profile["prompts"]["success_email_intro"], context_for(
+            profile, title=title, description=description, filename=original_filename,
+        )),
     )
     send_success_email(
-        "Homily Upload Successful",
+        " ".join(render(profile["prompts"]["success_email_subject"], context_for(profile, title=title)).split()),
         plain_message,
         html_message=html_message,
         inline_images=[inline_cover_image] if inline_cover_image else None,

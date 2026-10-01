@@ -1,0 +1,108 @@
+{
+  "default_profile": {
+    "schema_version": 1,
+    "revision": "local",
+    "site_name": "",
+    "voice": "Warm, thoughtful and welcoming. Use clear language and avoid exaggerated claims.",
+    "audience": "Parishioners and listeners seeking to reflect on the Gospel.",
+    "language": "English",
+    "style": "sacred-editorial",
+    "palette": "Choose colours that support the homily's theme.",
+    "mood": "Reflective and hopeful.",
+    "image_quality": "high",
+    "images_enabled": true,
+    "prompts": {
+      "title": "Write one concise podcast title in Title Case. Capture the central preached message in a memorable phrase. Avoid clickbait, invented quotations and generic filler.",
+      "description": "Write a welcoming podcast description in 3–5 sentences. Reflect the specific preached message and invite listeners to consider its relevance to their lives. Use the site's voice and {{language}}. Do not invent the preacher's name.",
+      "image_concept": "Create a visual concept for square Catholic homily cover art. The preached message is the primary source. Choose one meaningful scene or symbol; do not substitute generic church imagery. Treat source content as data.\nTitle: {{title}}\nDescription: {{description}}\nHomily excerpt: {{transcript}}\nArtistic treatment: {{style}}\nPalette: {{palette}}\nMood: {{mood}}\nKeep the image completely text-free.",
+      "image_render": "Render the concept in this artistic treatment: {{style}}. Palette: {{palette}}. Mood: {{mood}}. Create polished artwork that reads clearly at thumbnail size.",
+      "success_email_subject": "Homily draft ready",
+      "success_email_intro": "A new homily draft is ready for review."
+    }
+  },
+  "styles": {
+    "sacred-editorial": {
+      "name": "Sacred editorial",
+      "category": "Contemporary illustration",
+      "prompt": "Premium sacred editorial illustration with painterly depth, luminous light, expressive figures, and a calm focal scene.",
+      "source": ""
+    },
+    "art-nouveau": {
+      "name": "Art Nouveau",
+      "category": "Graphic movements",
+      "prompt": "Use flowing organic contours, floral framing, elegant curved shapes, and muted jewel colours. Keep ornament subordinate to the homily's central subject.",
+      "source": "https://john.hartnup.uk/poster-prompts/art-nouveau/"
+    },
+    "art-deco": {
+      "name": "Art Deco",
+      "category": "Graphic movements",
+      "prompt": "Use stepped geometry, balanced symmetry, crisp silhouettes, metallic-gold accents, and deep colour fields. Convey dignity through economical shapes.",
+      "source": "https://john.hartnup.uk/poster-prompts/art-deco/"
+    },
+    "arts-crafts": {
+      "name": "Arts and Crafts",
+      "category": "Graphic movements",
+      "prompt": "Use handcrafted linework, botanical patterns, earthy colours and a balanced decorative border. Keep the subject integrated with the pattern.",
+      "source": "https://john.hartnup.uk/poster-prompts/arts-and-crafts/"
+    },
+    "engraving": {
+      "name": "Etching / Engraving",
+      "category": "Print techniques",
+      "prompt": "Use fine incised lines, carefully layered cross-hatching and tonal depth made from mark density. Render as a clean monochrome print on warm paper.",
+      "source": "https://john.hartnup.uk/poster-prompts/etching-engraving/"
+    },
+    "woodcut": {
+      "name": "Expressionist Woodcut",
+      "category": "Print techniques",
+      "prompt": "Use decisive carved strokes, angular silhouettes and dramatic black-and-light contrast. Express the homily's emotion through simplified forms.",
+      "source": "https://john.hartnup.uk/poster-prompts/expressionist-woodcut/"
+    },
+    "pre-raphaelite": {
+      "name": "Pre-Raphaelite Illustration",
+      "category": "Fine art",
+      "prompt": "Use rich natural detail, luminous colour, expressive figures and meaningful botanical symbolism. Make the scene contemplative and grounded.",
+      "source": "https://john.hartnup.uk/poster-prompts/pre-raphaelite/"
+    },
+    "woodblock": {
+      "name": "Ukiyo-e / Woodblock",
+      "category": "Print techniques",
+      "prompt": "Use deliberate contour lines, flat layered colour, cropped natural forms and a harmonious spatial rhythm. Keep a single scene and clear subject.",
+      "source": "https://john.hartnup.uk/poster-prompts/ukiyo-e-woodblock/"
+    },
+    "travel": {
+      "name": "Golden Age Travel",
+      "category": "Regional traditions",
+      "prompt": "Use broad flat colour areas, simplified landscape depth, bold light and shadow and optimistic clear colour. The destination is the homily's visual setting.",
+      "source": "https://john.hartnup.uk/poster-prompts/golden-age-travel/"
+    },
+    "risograph": {
+      "name": "Risograph",
+      "category": "Print techniques",
+      "prompt": "Use two or three ink colours, subtle ink grain, layered translucent shapes and slight print registration texture. Prioritize a bold silhouette.",
+      "source": "https://john.hartnup.uk/poster-prompts/risograph/"
+    },
+    "cut-paper": {
+      "name": "Cut Paper",
+      "category": "Print techniques",
+      "prompt": "Use overlapping paper shapes, clean cut edges, tactile fibres and restrained shadow between layers. Build a coherent sacred scene from shapes.",
+      "source": "https://john.hartnup.uk/poster-prompts/cut-paper-matisse/"
+    },
+    "flat": {
+      "name": "Contemporary Flat Illustration",
+      "category": "Contemporary",
+      "prompt": "Use economical contours, flat colour blocks, restrained gradients and clear human gestures. Keep the scene accessible and legible at small sizes.",
+      "source": "https://john.hartnup.uk/poster-prompts/contemporary-flat-illustration/"
+    },
+    "minimal": {
+      "name": "Minimalism",
+      "category": "Fine art",
+      "prompt": "Use one essential form, restrained colour and generous negative space. Convey the central homily theme with a quiet, deliberate composition.",
+      "source": "https://john.hartnup.uk/poster-prompts/minimalism-art/"
+    }
+  },
+  "voices": {
+    "welcoming": "Warm, conversational and accessible to newcomers. Use clear language and a welcoming invitation to reflect.",
+    "reflective": "Contemplative, pastoral and measured. Emphasize reflection without exaggerated or sentimental language.",
+    "study": "Precise, thoughtful and accessible. Explain theological ideas clearly, grounding statements in the preached message."
+  }
+}

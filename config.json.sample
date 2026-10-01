@@ -85,9 +85,21 @@
   },
 
   "wordpress": {
-    "url": "https://yourwordpresssite.com",
+    "url": "https://example.org",
     "user": "your_wp_username",
-    "app_password": "your_wp_application_password"
+    "app_password": "your_wp_application_password",
+    "post_rest_base": "podcast",
+    "meta_fields": {
+      "audio": "audio_file",
+      "cover_url": "cover_image",
+      "cover_id": "cover_image_id"
+    }
+  },
+
+  "homily_studio": {
+    "enabled": false,
+    "user": "your_dedicated_studio_username",
+    "app_password": "your_dedicated_studio_application_password"
   },
 
   "gpt_title_addon": "Ensure the title is inspirational and captures the essence of the Gospel message.",

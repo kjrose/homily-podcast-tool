@@ -406,7 +406,8 @@ function New-DeploymentBackup {
 
     $pathsToBackup = @(
         (Join-Path $TargetDeploymentDir 'homilymonitor.exe'),
-        (Join-Path $TargetDeploymentDir '_internal')
+        (Join-Path $TargetDeploymentDir '_internal'),
+        (Join-Path $TargetDeploymentDir 'editorial-catalog.json')
     )
 
     if ($InstallInfo -and $InstallInfo.Manager -eq 'WinSW') {
@@ -616,6 +617,7 @@ if ($PSCmdlet.ShouldProcess($DeploymentDir, "Replace deployed application artifa
     Remove-DeploymentArtifacts -TargetDeploymentDir $DeploymentDir
     Copy-Item -LiteralPath (Join-Path $BuildOutputDir 'homilymonitor.exe') -Destination $DeploymentDir -Force
     Copy-Item -LiteralPath (Join-Path $BuildOutputDir '_internal') -Destination $DeploymentDir -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $ProjectRoot 'homily_monitor\editorial-catalog.json') -Destination $DeploymentDir -Force
     $deployedExe = Get-Item -LiteralPath (Join-Path $DeploymentDir 'homilymonitor.exe')
     Write-Step "Deployment complete: $($deployedExe.FullName) updated $($deployedExe.LastWriteTime)"
 }

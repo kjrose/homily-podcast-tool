@@ -3,6 +3,7 @@
 import sqlite3
 import logging
 import os
+import json
 
 from .config_loader import CFG
 
@@ -72,6 +73,9 @@ def get_conn():
             if 'homilist_source' not in columns:
                 logger.info("Adding homilist_source column to homilies table...")
                 cursor.execute("ALTER TABLE homilies ADD COLUMN homilist_source TEXT DEFAULT ''")
+
+            if 'editorial_profile' not in columns:
+                cursor.execute("ALTER TABLE homilies ADD COLUMN editorial_profile TEXT")
             
             CONN.commit()
             logger.info(f"Database connection established and schema updated for {DB_PATH}")
@@ -97,6 +101,7 @@ def insert_homily(
     homilist_name='',
     homilist_confidence=None,
     homilist_source='',
+    editorial_profile=None,
 ):
     try:
         conn = get_conn()
@@ -114,9 +119,10 @@ def insert_homily(
                 lit_year,
                 homilist_name,
                 homilist_confidence,
-                homilist_source
+                homilist_source,
+                editorial_profile
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             group_key,
             filename,
@@ -129,6 +135,7 @@ def insert_homily(
             homilist_name,
             homilist_confidence,
             homilist_source,
+            json.dumps(editorial_profile) if editorial_profile is not None else None,
         ))
         conn.commit()
         logger.info(f"Successfully inserted homily: {filename}")
@@ -163,6 +170,17 @@ def get_latest_homily_analysis(filename):
         (filename,),
     )
     return cursor.fetchone()
+
+
+def get_homily_editorial_profile(filename):
+    row = get_conn().execute(
+        "SELECT editorial_profile FROM homilies WHERE filename = ? ORDER BY processed_at DESC, id DESC LIMIT 1",
+        (filename,),
+    ).fetchone()
+    if row and row[0]:
+        from .editorial import validate_profile
+        return validate_profile(json.loads(row[0]))
+    return None
 
 
 def get_most_recent_homily_analysis():

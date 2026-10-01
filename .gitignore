@@ -56,3 +56,6 @@ homilymonitorservice/
 deploy-logs/
 deploy-backups/
 .deploy-builds/
+
+# Editorial settings and preview worker state (may contain private prompts/content)
+.homily-studio/
